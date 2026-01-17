@@ -130,6 +130,7 @@ jax_cache/
 *.tmp
 *temp*
 scratch/
+CLAUDE.md
 
 # OS files
 .DS_Store
@@ -139,8 +140,3 @@ Thumbs.db
 # Don't track changes inside vendor submodules
 # (submodule pointer is still tracked, but internal changes are ignored)
 vendor/
-
-# ===== Override global gitignore =====
-# These files ARE tracked in this repo (override ~/.gitignore_global)
-!CLAUDE.md
-!README.md
