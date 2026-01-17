@@ -32,15 +32,19 @@ class LlamaConfig:
     heads: int = 6
     dim_head: int = 64
     ffn_dim_multiplier: float = 2.67
+    ffn_multiple_of: int = 256  # Round FFN hidden dim to multiple of this
     max_seq_len: int = 2048
     rope_theta: float = 10000.0
     norm_eps: float = 1e-5
     tied_embedding: bool = True
+    embed_init_std: float = 0.02  # Embedding initialization std
 
     @property
     def ffn_hidden_dim(self) -> int:
-        """Compute FFN hidden dimension."""
-        return int(self.ffn_dim_multiplier * self.dim)
+        """Compute FFN hidden dimension, rounded to multiple_of."""
+        hidden = int(self.ffn_dim_multiplier * self.dim)
+        # Round to nearest multiple_of
+        return self.ffn_multiple_of * ((hidden + self.ffn_multiple_of - 1) // self.ffn_multiple_of)
 
 
 class RMSNorm(eqx.Module):
@@ -392,8 +396,13 @@ class LlamaLM(eqx.Module):
         self.config = config
         keys = jax.random.split(key, config.depth + 3)
 
-        # Token embeddings
-        self.embed = eqx.nn.Embedding(config.vocab_size, config.dim, key=keys[0])
+        # Token embeddings with proper initialization (std=0.02)
+        embed = eqx.nn.Embedding(config.vocab_size, config.dim, key=keys[0])
+        # Re-initialize with smaller std for stability
+        embed_weight = (
+            jax.random.normal(keys[0], (config.vocab_size, config.dim)) * config.embed_init_std
+        )
+        self.embed = eqx.tree_at(lambda e: e.weight, embed, embed_weight)
 
         # Transformer blocks
         self.layers = [
