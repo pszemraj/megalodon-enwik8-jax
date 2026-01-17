@@ -1,0 +1,3 @@
+[submodule "vendor/megalodon-enwik8-torch"]
+	path = vendor/megalodon-enwik8-torch
+	url = https://github.com/pszemraj/megalodon-enwik8.git
