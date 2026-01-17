@@ -32,8 +32,10 @@
 
 | Model         | Val Loss @ 1100 | BPC      | Best Loss (step) | Time (1200 steps) |
 | ------------- | --------------- | -------- | ---------------- | ----------------- |
-| **Megalodon** | 1.573           | 2.27     | 1.346 (800)      | ~42m              |
-| Llama         | 1.655           | 2.39     | 1.400 (800)      | ~3m               |
+| **Megalodon** | 1.483           | 2.14     | 1.346 (800)      | ~1m**             |
+| Llama         | 1.565           | 2.26     | 1.400 (800)      | ~4m               |
+
+**With generation disabled (default). See "Performance Notes" below.
 
 > BPC (bits per character) = val_loss / ln(2)
 
@@ -86,20 +88,31 @@
 
 4. **Llama initialization fixed**: After fixing embedding init (std=0.02 to match PyTorch), JAX Llama initial loss matches PyTorch exactly (5.66 vs 5.68).
 
+### Performance Notes
+
+**Generation Overhead**: The `generate()` function uses a Python loop that triggers repeated JIT compilation for Megalodon's complex streaming cache logic. Impact:
+
+| Config | Megalodon Time | Llama Time |
+|--------|---------------|------------|
+| With generation (every 100 steps) | ~43m | ~4m |
+| Without generation | ~1m | ~50s |
+
+Generation is **disabled by default** in `configs/megalodon_multichunk_512.yaml` for performance. Enable with `generate_every: 100` if sample outputs are needed.
+
 ### Key Observations
 
-- **Megalodon outperforms Llama** in both frameworks (1.57 vs 1.66 JAX; 1.45 vs 1.54 PyTorch)
-- **JAX Megalodon is ~5x slower** than PyTorch (42m vs 8m), while JAX Llama is comparable (~3m)
+- **Megalodon outperforms Llama** in both frameworks (1.48 vs 1.57 JAX; 1.45 vs 1.54 PyTorch)
+- **JAX training speed is competitive**: ~1m for Megalodon, ~50s for Llama (without generation)
 - **Peak performance is strong**: JAX best losses beat PyTorch best losses for both architectures
 - **Late-training variance**: Both JAX models show increased loss after step 800, suggesting potential learning rate schedule differences
 
 ### Recommendations
 
-1. **For production**: Use PyTorch for Megalodon until JAX complex tensor compilation improves
-2. **For research**: JAX implementation is valid for architecture experiments (modeling capacity is equivalent)
+1. **For training**: JAX implementation is now competitive with PyTorch (~1m vs ~8m for Megalodon)
+2. **For generation**: Consider rewriting `generate()` with `jax.lax.fori_loop` to avoid Python loop overhead
 3. **Future work**:
+   - Implement JAX-traced generation loop for efficient text generation
    - Investigate optimizer state differences causing late-training variance
-   - Profile JAX Megalodon to identify bottlenecks (likely complex FFT operations)
    - Consider learning rate warmup/decay schedule alignment
 
 ## Reproduction

@@ -168,8 +168,8 @@ def main():
         )
         pbar.set_postfix({"loss": f"{train_loss:.4f}", "bpc": f"{train_bpc:.4f}"})
 
-        # Generation
-        if step % generate_every == 0 and step > 0:
+        # Generation (skip if generate_every=0)
+        if generate_every > 0 and step % generate_every == 0 and step > 0:
             prompt_input, _ = sample_batch(np_rng, val_data, 1, generate_prompt_len)
             key, gen_key = jax.random.split(key)
             generated = generate(

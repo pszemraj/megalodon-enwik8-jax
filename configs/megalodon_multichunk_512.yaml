@@ -1,5 +1,9 @@
 # Multi-chunk Megalodon config: train on seq_len 512 with chunk_size 256.
-# Generation uses a 384-token prompt and produces 128 tokens.
+#
+# NOTE: Generation is disabled by default (generate_every=0) because the
+# current generate() function uses a Python loop that triggers expensive
+# JIT recompilation for Megalodon's complex streaming cache logic.
+# Training completes in ~1 minute without generation vs ~43 minutes with it.
 run_dir: runs/megalodon
 model: megalodon
 
@@ -47,7 +51,7 @@ seq_len: 512
 save_every: 500
 validate_every: 100
 val_batches: 10
-generate_every: 100
+generate_every: 0  # Disabled for performance (see header comment)
 generate_prompt_len: 384
 generate_length: 128
 temperature: 1.0
