@@ -14,7 +14,6 @@ from __future__ import annotations
 from typing import Any
 
 import jax
-import jax.numpy as jnp
 from jaxtyping import Array, Float, Int
 
 # Import from megalodon-jax
@@ -138,12 +137,9 @@ def forward_megalodon(
         - logits: Shape [B, T, vocab_size]
         - cache: Updated cache (or None if not requested)
     """
-    # megalodon-jax expects attention_mask as bool
-    attention_mask = jnp.ones(input_ids.shape, dtype=bool)
-
+    # attention_mask defaults to None in megalodon-jax (no masking for unpadded seqs)
     logits, new_cache = model(
         input_ids,
-        attention_mask=attention_mask,
         cache=cache,
         return_cache=return_cache,
         deterministic=deterministic,

@@ -10,9 +10,34 @@ import jax.numpy as jnp
 import optax
 from jaxtyping import Array, Float, Int
 
-from .losses import cross_entropy_loss
 from .models import forward_model
 from .train_state import TrainState
+
+
+def cross_entropy_loss(logits: jax.Array, labels: jax.Array) -> jax.Array:
+    """Compute cross-entropy loss for language modeling.
+
+    Args:
+        logits: Predicted logits of shape [B, T, V] (any dtype).
+        labels: Ground truth labels of shape [B, T] (int32).
+
+    Returns:
+        Scalar loss value in float32, averaged over all tokens.
+    """
+    logits_f32 = logits.astype(jnp.float32)
+    log_probs = jax.nn.log_softmax(logits_f32, axis=-1)
+
+    batch_size, seq_len, vocab_size = logits.shape
+    batch_idx = jnp.arange(batch_size)[:, None]
+    seq_idx = jnp.arange(seq_len)[None, :]
+    target_log_probs = log_probs[batch_idx, seq_idx, labels]
+
+    return -target_log_probs.mean()
+
+
+def bpc_from_loss(loss: jax.Array) -> jax.Array:
+    """Convert cross-entropy loss to bits-per-character."""
+    return loss / jnp.log(2.0)
 
 
 def make_train_step(
@@ -21,8 +46,8 @@ def make_train_step(
 ):
     """Create JIT-compiled training step function.
 
-    The returned function handles gradient accumulation via jax.lax.scan
-    over the accumulation dimension.
+    Uses vmap for parallel loss computation across micro-batches,
+    then single gradient computation on the averaged loss.
 
     Args:
         cfg: Configuration dictionary.
@@ -48,42 +73,20 @@ def make_train_step(
         Returns:
             Tuple of (new_state, metrics) where metrics contains loss, grad_norm.
         """
-        grad_accum = input_ids.shape[0]
 
-        def loss_fn(model, batch_input, batch_labels):
-            """Compute loss for a single micro-batch."""
-            logits, _ = forward_model(model, batch_input, deterministic=True)
-            return cross_entropy_loss(logits, batch_labels)
+        def loss_fn(model, all_inputs, all_labels):
+            """Compute average loss across all micro-batches."""
 
-        def accum_step(carry, batch):
-            """Accumulate gradients for one micro-batch."""
-            grad_sum, loss_sum = carry
-            batch_input, batch_labels = batch
+            def single_batch_loss(batch_input, batch_labels):
+                logits, _ = forward_model(model, batch_input, deterministic=True)
+                return cross_entropy_loss(logits, batch_labels)
 
-            # Compute loss and gradients for this micro-batch
-            loss, grads = eqx.filter_value_and_grad(loss_fn)(state.model, batch_input, batch_labels)
+            # vmap over the accumulation dimension
+            losses = jax.vmap(single_batch_loss)(all_inputs, all_labels)
+            return losses.mean()
 
-            # Accumulate
-            new_grad_sum = jax.tree.map(lambda g, gs: g + gs, grads, grad_sum)
-            new_loss_sum = loss_sum + loss
-
-            return (new_grad_sum, new_loss_sum), None
-
-        # Initialize gradient accumulator
-        params, _ = eqx.partition(state.model, eqx.is_array)
-        grad_init = jax.tree.map(jnp.zeros_like, params)
-        loss_init = jnp.array(0.0, dtype=jnp.float32)
-
-        # Scan over accumulation steps
-        (grad_sum, loss_sum), _ = jax.lax.scan(
-            accum_step,
-            (grad_init, loss_init),
-            (input_ids, labels),
-        )
-
-        # Normalize gradients by accumulation steps
-        grads = jax.tree.map(lambda g: g / grad_accum, grad_sum)
-        avg_loss = loss_sum / grad_accum
+        # Single gradient computation on averaged loss
+        loss, grads = eqx.filter_value_and_grad(loss_fn)(state.model, input_ids, labels)
 
         # Compute gradient norm before clipping (for logging)
         grad_norm = optax.global_norm(grads)
@@ -103,7 +106,7 @@ def make_train_step(
         )
 
         metrics = {
-            "loss": avg_loss,
+            "loss": loss,
             "grad_norm": grad_norm,
         }
 

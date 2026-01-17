@@ -13,6 +13,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
+from pathlib import Path
 
 import jax
 import numpy as np
@@ -20,20 +22,27 @@ from tqdm.auto import tqdm
 
 from megalodon_enwik8_jax.checkpoint import load_checkpoint, save_checkpoint
 from megalodon_enwik8_jax.config import load_config, resolve_run_dir, validate_config
-from megalodon_enwik8_jax.data import (
-    decode_tokens,
-    load_enwik8,
-    sample_accum_batch,
-    sample_batch,
-)
+from megalodon_enwik8_jax.data import decode_tokens, load_enwik8, sample_accum_batch, sample_batch
 from megalodon_enwik8_jax.generate import generate
-from megalodon_enwik8_jax.logging import JsonlLogger
-from megalodon_enwik8_jax.losses import bpc_from_loss
 from megalodon_enwik8_jax.models import build_model
 from megalodon_enwik8_jax.optim import build_optimizer
 from megalodon_enwik8_jax.train_state import create_train_state
-from megalodon_enwik8_jax.training import make_eval_step, make_train_step, run_validation
+from megalodon_enwik8_jax.training import (
+    bpc_from_loss,
+    make_eval_step,
+    make_train_step,
+    run_validation,
+)
 from megalodon_enwik8_jax.utils import count_params, format_params
+
+
+def log_metrics(path: Path, metrics: dict) -> None:
+    """Append metrics as JSONL to file."""
+    with open(path, "a") as f:
+        f.write(
+            json.dumps({k: float(v) if hasattr(v, "item") else v for k, v in metrics.items()})
+            + "\n"
+        )
 
 
 def main():
@@ -43,45 +52,28 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        "--config",
-        type=str,
-        default="configs/test.yaml",
-        help="Path to config file",
+        "--config", type=str, default="configs/test.yaml", help="Path to config file"
     )
     parser.add_argument(
-        "--run_dir",
-        type=str,
-        default=None,
-        help="Override run directory from config",
+        "--run_dir", type=str, default=None, help="Override run directory from config"
     )
     parser.add_argument(
-        "--resume",
-        type=str,
-        default=None,
-        help="Path to checkpoint to resume from",
+        "--resume", type=str, default=None, help="Path to checkpoint to resume from"
     )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=None,
-        help="Override random seed",
-    )
+    parser.add_argument("--seed", type=int, default=None, help="Override random seed")
     args = parser.parse_args()
 
     # Load and validate config
     cfg = load_config(args.config)
     cfg = validate_config(cfg)
 
-    # Override seed if specified
     if args.seed is not None:
         cfg["seed"] = args.seed
 
     # Resolve run directory
     run_dir = resolve_run_dir(cfg, args.run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
-
-    # Setup logging
-    logger = JsonlLogger(run_dir / "metrics.jsonl")
+    metrics_path = run_dir / "metrics.jsonl"
 
     # Print config summary
     model_type = cfg["model"]
@@ -152,13 +144,9 @@ def main():
         if step % validate_every == 0:
             val_loss = run_validation(state.model, eval_step, val_data, np_rng, cfg)
             val_bpc = bpc_from_loss(val_loss)
-
-            val_metrics = {
-                "step": step,
-                "val_loss": float(val_loss),
-                "val_bpc": float(val_bpc),
-            }
-            logger.log(val_metrics)
+            log_metrics(
+                metrics_path, {"step": step, "val_loss": float(val_loss), "val_bpc": float(val_bpc)}
+            )
             tqdm.write(f"Step {step} | Val loss: {val_loss:.4f} | Val BPC: {val_bpc:.4f}")
 
         # Training step
@@ -169,23 +157,21 @@ def main():
         train_loss = float(metrics["loss"])
         train_bpc = float(bpc_from_loss(metrics["loss"]))
         grad_norm = float(metrics["grad_norm"])
-
-        train_metrics = {
-            "step": step,
-            "train_loss": train_loss,
-            "train_bpc": train_bpc,
-            "grad_norm": grad_norm,
-        }
-        logger.log(train_metrics)
-
+        log_metrics(
+            metrics_path,
+            {
+                "step": step,
+                "train_loss": train_loss,
+                "train_bpc": train_bpc,
+                "grad_norm": grad_norm,
+            },
+        )
         pbar.set_postfix({"loss": f"{train_loss:.4f}", "bpc": f"{train_bpc:.4f}"})
 
         # Generation
         if step % generate_every == 0 and step > 0:
-            # Sample prompt from validation data
             prompt_input, _ = sample_batch(np_rng, val_data, 1, generate_prompt_len)
             key, gen_key = jax.random.split(key)
-
             generated = generate(
                 state.model,
                 prompt_input,
@@ -194,11 +180,8 @@ def main():
                 min_p=cfg.get("min_p", 0.1),
                 key=gen_key,
             )
-
-            # Decode and display
             prompt_text = decode_tokens(prompt_input[0])
             gen_text = decode_tokens(generated[0, generate_prompt_len:])
-
             tqdm.write(f"\n{'=' * 60} Step {step} {'=' * 60}")
             tqdm.write(f"Prompt: {prompt_text}")
             tqdm.write(f"Generated: {gen_text}")

@@ -5,15 +5,8 @@ from __future__ import annotations
 import jax
 import jax.numpy as jnp
 
-from megalodon_enwik8_jax.generate import generate
+from megalodon_enwik8_jax.generate import apply_min_p, apply_temperature, generate, sample_token
 from megalodon_enwik8_jax.models import build_model
-from megalodon_enwik8_jax.sampling import (
-    apply_min_p,
-    apply_temperature,
-    apply_top_k,
-    apply_top_p,
-    sample_next_token,
-)
 
 
 class TestGenerate:
@@ -160,47 +153,19 @@ class TestSamplingPrimitives:
             if prob < threshold:
                 assert filtered[0, i] == float("-inf")
 
-    def test_apply_top_k_keeps_k_tokens(self, key):
-        """top_k keeps only top k tokens."""
-        logits = jnp.array([[5.0, 3.0, 4.0, 1.0, 2.0]])
-
-        filtered = apply_top_k(logits, k=2)
-
-        # Should keep indices 0 and 2 (values 5.0 and 4.0)
-        # Others should be -inf
-        assert filtered[0, 0] == 5.0
-        assert filtered[0, 2] == 4.0
-        assert filtered[0, 1] == float("-inf")
-        assert filtered[0, 3] == float("-inf")
-        assert filtered[0, 4] == float("-inf")
-
-    def test_apply_top_p_nucleus(self, key):
-        """top_p implements nucleus sampling."""
-        # Create logits with known softmax distribution
-        logits = jnp.array([[10.0, 5.0, 0.0, -5.0, -10.0]])
-
-        # With low p, should keep fewer tokens
-        filtered_low = apply_top_p(logits, p=0.9)
-        filtered_high = apply_top_p(logits, p=0.99)
-
-        # Higher p should keep more tokens (fewer -inf)
-        n_kept_low = jnp.sum(filtered_low > float("-inf"))
-        n_kept_high = jnp.sum(filtered_high > float("-inf"))
-        assert n_kept_high >= n_kept_low
-
-    def test_sample_next_token_valid_output(self, key):
-        """sample_next_token returns valid tokens."""
+    def test_sample_token_valid_output(self, key):
+        """sample_token returns valid tokens."""
         logits = jnp.array([[1.0, 2.0, 3.0]])
 
-        new_key, tokens = sample_next_token(key, logits)
+        new_key, tokens = sample_token(key, logits)
 
         # Should return new key and token indices
         assert new_key is not None
         assert tokens.shape == (1,)
         assert 0 <= int(tokens[0]) < 3
 
-    def test_sample_next_token_respects_distribution(self, key):
-        """sample_next_token samples according to softmax distribution."""
+    def test_sample_token_respects_distribution(self, key):
+        """sample_token samples according to softmax distribution."""
         # Heavily biased logits - token 2 should be sampled almost always
         logits = jnp.array([[-100.0, -100.0, 100.0]])
 
@@ -208,7 +173,7 @@ class TestSamplingPrimitives:
         samples = []
         current_key = key
         for _ in range(100):
-            current_key, token = sample_next_token(current_key, logits)
+            current_key, token = sample_token(current_key, logits)
             samples.append(int(token[0]))
 
         # Token 2 should dominate
