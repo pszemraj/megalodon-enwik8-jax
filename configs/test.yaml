@@ -1,0 +1,48 @@
+# Quick test configuration for both models
+# Usage: python train.py --config configs/test.yaml
+run_dir: runs/test
+model: llama  # or "megalodon"
+
+# Model architecture (Llama config - small for testing)
+num_tokens: 256  # vocab size (enwik8 bytes)
+dim: 128
+depth: 2
+heads: 4
+dim_head: 32
+tied_embedding: true
+ffn_dim_multiplier: 2.67  # yields ~341 hidden dim
+
+# Megalodon-specific (used when model: megalodon)
+model_dim: 128
+num_layers: 2
+num_heads: 2
+z_dim: 64
+value_dim: 128
+ffn_hidden_dim: 341
+cema_ndim: 4
+chunk_size: 128
+norm_num_groups: 16
+
+# JAX-specific
+dtype: bf16  # bf16 or fp32 (no fp16)
+jit: true
+
+# Training schedule
+num_batches: 10
+batch_size: 2
+grad_accum_every: 2
+learning_rate: 0.001
+weight_decay: 0.0
+grad_clip_norm: 1.0
+
+# Data
+data_path: data/enwik8.gz
+seq_len: 128
+
+# Evaluation
+validate_every: 5
+val_batches: 5
+generate_every: 1000  # Don't generate during test
+save_every: 1000  # Don't save during test
+
+seed: 7

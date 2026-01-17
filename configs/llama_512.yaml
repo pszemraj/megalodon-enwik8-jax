@@ -1,0 +1,41 @@
+# Llama baseline matched to megalodon_multichunk_512.yaml for fair comparison.
+# Architecture chosen to have similar parameter count to Megalodon.
+run_dir: runs/llama
+model: llama
+
+# Model architecture - matched to Megalodon config
+num_tokens: 256  # vocab size (enwik8 bytes)
+dim: 384         # = model_dim
+depth: 6         # = num_layers
+heads: 6
+dim_head: 64
+tied_embedding: true
+ffn_dim_multiplier: 2.67  # Match ffn_hidden_dim ~ 1024
+
+# JAX-specific
+dtype: bf16
+jit: true
+
+# Training schedule - IDENTICAL to Megalodon
+num_batches: 1200
+batch_size: 1
+grad_accum_every: 16
+learning_rate: 0.0004
+weight_decay: 0.0002
+grad_clip_norm: 1.0
+
+# Data - IDENTICAL
+data_path: data/enwik8.gz
+seq_len: 512
+
+# Evaluation - IDENTICAL
+save_every: 500
+validate_every: 100
+val_batches: 10
+generate_every: 100
+generate_prompt_len: 384
+generate_length: 128
+temperature: 1.0
+min_p: 0.1
+
+seed: 7

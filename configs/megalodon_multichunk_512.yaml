@@ -1,0 +1,56 @@
+# Multi-chunk Megalodon config: train on seq_len 512 with chunk_size 256.
+# Generation uses a 384-token prompt and produces 128 tokens.
+run_dir: runs/megalodon
+model: megalodon
+
+# Model architecture
+num_tokens: 256  # vocab size (enwik8 bytes)
+model_dim: 384
+num_layers: 6
+num_heads: 3
+z_dim: 192
+value_dim: 384
+ffn_hidden_dim: 1024
+cema_ndim: 8
+chunk_size: 256
+norm_num_groups: 32
+
+# Megalodon-specific options
+swiglu: true
+rescale_nffn: false
+scale_emb: false
+share_emb: false
+init_mode: he
+rope_base: null
+attention_dropout: 0.0
+hidden_dropout: 0.0
+dropout: 0.0
+use_checkpoint: false
+
+# JAX-specific
+dtype: bf16  # bf16 required for Megalodon (fp16 overflows)
+jit: true
+
+# Training schedule
+num_batches: 1200
+batch_size: 1
+grad_accum_every: 16
+learning_rate: 0.0004
+weight_decay: 0.0002
+grad_clip_norm: 1.0
+
+# Data
+data_path: data/enwik8.gz
+seq_len: 512
+
+# Evaluation/generation
+save_every: 500
+validate_every: 100
+val_batches: 10
+generate_every: 100
+generate_prompt_len: 384
+generate_length: 128
+temperature: 1.0
+min_p: 0.1
+
+seed: 7
