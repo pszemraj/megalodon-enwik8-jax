@@ -31,8 +31,10 @@ pip install -e .
 
 > [!IMPORTANT]
 > Set `XLA_PYTHON_CLIENT_PREALLOCATE=false` to avoid GPU memory conflicts. This prevents JAX from pre-allocating all GPU memory at startup.
-> If you see CUDA OOM errors on matmul with newer GPUs (e.g., RTX 5090), add
-> `XLA_FLAGS=--xla_gpu_enable_triton_gemm=false` to fall back to cuBLAS.
+
+> [!IMPORTANT]
+> On some newer GPUs (e.g., RTX 5090) with `jax/jaxlib 0.8.2`, Triton GEMM can fail even for tiny matmuls with `CUDA_ERROR_OUT_OF_MEMORY`.
+> If that happens, run with `XLA_FLAGS=--xla_gpu_enable_triton_gemm=false` to force cuBLAS.
 
 ## Training
 
