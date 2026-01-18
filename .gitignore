@@ -108,6 +108,9 @@ ipython_config.py
 
 # ===== Project-specific =====
 
+# Generated version file (hatch-vcs)
+_version.py
+
 # Training runs and checkpoints
 runs/
 checkpoints/

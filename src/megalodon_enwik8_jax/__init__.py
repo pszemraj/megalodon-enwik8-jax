@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+try:
+    from ._version import __version__
+except ImportError:
+    __version__ = "0.0.0.dev0"
 
 from .config import get_dtype, load_config, resolve_run_dir, validate_config
 from .data import decode_tokens, encode_prompt, load_enwik8, sample_accum_batch, sample_batch

@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
 name = "megalodon-enwik8-jax"
-version = "0.1.0"
+dynamic = ["version"]
 description = "JAX port of MEGALODON character-level language modeling on enwik8"
 readme = "README.md"
 license = "Apache-2.0"
@@ -39,6 +39,12 @@ dev = ["pytest>=8.0", "ruff>=0.4.0"]
 [project.scripts]
 train-megalodon = "megalodon_enwik8_jax.cli:train_main"
 infer-megalodon = "megalodon_enwik8_jax.cli:inference_main"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/megalodon_enwik8_jax/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/megalodon_enwik8_jax"]
