@@ -29,20 +29,19 @@ pip install -U "jax[cuda12]"
 pip install -e .
 ```
 
+> [!IMPORTANT]
+> Set `XLA_PYTHON_CLIENT_PREALLOCATE=false` to avoid GPU memory conflicts. This prevents JAX from pre-allocating all GPU memory at startup.
+
 ## Training
 
 ```bash
-# Megalodon (~3 min on RTX 5090)
-python train.py --config configs/megalodon_multichunk_512.yaml
-
-# Llama baseline (~3.5 min)
-python train.py --config configs/llama_512.yaml
+XLA_PYTHON_CLIENT_PREALLOCATE=false python train.py --config configs/megalodon_multichunk_512.yaml
 ```
 
 ## Inference
 
 ```bash
-python inference.py --ckpt runs/megalodon/checkpoint_final.eqx --prompt "The "
+XLA_PYTHON_CLIENT_PREALLOCATE=false python inference.py --ckpt runs/megalodon/checkpoint_final.eqx --prompt "The "
 ```
 
 ## Project Structure
