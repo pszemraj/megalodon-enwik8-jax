@@ -77,18 +77,6 @@ def main():
         help="Min-p filtering threshold",
     )
     parser.add_argument(
-        "--top_k",
-        type=int,
-        default=None,
-        help="Top-k filtering (None to disable)",
-    )
-    parser.add_argument(
-        "--top_p",
-        type=float,
-        default=None,
-        help="Top-p (nucleus) filtering (None to disable)",
-    )
-    parser.add_argument(
         "--seed",
         type=int,
         default=42,
@@ -138,8 +126,6 @@ def main():
         max_new_tokens=args.max_new_tokens,
         temperature=args.temperature,
         min_p=args.min_p,
-        top_k=args.top_k,
-        top_p=args.top_p,
         key=gen_key,
     )
 
