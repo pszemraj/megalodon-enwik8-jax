@@ -18,8 +18,7 @@ for fresh comparisons. See [RESULTS.md](RESULTS.md) for JAX vs PyTorch compariso
 git clone https://github.com/pszemraj/megalodon-enwik8-jax.git
 cd megalodon-enwik8-jax
 
-# Download enwik8 into data/enwik8.gz
-python scripts/download_enwik8.py
+# Dataset is already included in data/enwik8.gz
 
 # Install JAX with GPU support (adjust for your CUDA version)
 # See: https://jax.readthedocs.io/en/latest/installation.html
@@ -66,9 +65,7 @@ megalodon-enwik8-jax/
 │   ├── checkpoint.py     # Save/load
 │   └── config.py         # YAML config
 ├── configs/              # Training configs
-├── data/                 # Downloaded enwik8.gz (run scripts/download_enwik8.py)
-├── scripts/
-│   └── download_enwik8.py
+├── data/                 # enwik8.gz (tracked in this repo)
 ├── vendor/               # PyTorch reference (submodule)
 ├── train.py              # Thin wrapper for package CLI
 └── inference.py

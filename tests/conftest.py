@@ -3,10 +3,8 @@
 
 from __future__ import annotations
 
-import gzip
 import os
 from collections.abc import Generator
-from pathlib import Path
 from typing import Any
 
 _TRITON_FLAG = "--xla_gpu_enable_triton_gemm=false"
@@ -73,20 +71,8 @@ def key() -> jax.Array:
     return jax.random.PRNGKey(42)
 
 
-@pytest.fixture(scope="session")
-def tiny_enwik8_path(tmp_path_factory: pytest.TempPathFactory) -> str:
-    """Create a tiny gzipped enwik8-like file for tests."""
-    data_dir = tmp_path_factory.mktemp("enwik8")
-    path = Path(data_dir) / "enwik8.gz"
-    rng = np.random.default_rng(0)
-    data = rng.integers(0, 256, size=10_000, dtype=np.uint8)
-    with gzip.open(path, "wb") as f:
-        f.write(data.tobytes())
-    return str(path)
-
-
 @pytest.fixture
-def test_config(tiny_enwik8_path: str) -> dict[str, Any]:
+def test_config() -> dict[str, Any]:
     """Minimal config for testing."""
     return {
         "model": "llama",
@@ -105,7 +91,7 @@ def test_config(tiny_enwik8_path: str) -> dict[str, Any]:
         "weight_decay": 0.0,
         "grad_clip_norm": 1.0,
         "seed": 42,
-        "data_path": tiny_enwik8_path,
+        "data_path": "data/enwik8.gz",
         "validate_every": 100,
         "val_batches": 2,
         "generate_every": 100,
@@ -118,7 +104,7 @@ def test_config(tiny_enwik8_path: str) -> dict[str, Any]:
 
 
 @pytest.fixture
-def megalodon_config(tiny_enwik8_path: str) -> dict[str, Any]:
+def megalodon_config() -> dict[str, Any]:
     """Minimal Megalodon config for testing."""
     return {
         "model": "megalodon",
@@ -140,7 +126,7 @@ def megalodon_config(tiny_enwik8_path: str) -> dict[str, Any]:
         "weight_decay": 0.0,
         "grad_clip_norm": 1.0,
         "seed": 42,
-        "data_path": tiny_enwik8_path,
+        "data_path": "data/enwik8.gz",
         "validate_every": 100,
         "val_batches": 2,
         "generate_every": 100,
