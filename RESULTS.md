@@ -24,10 +24,10 @@
 
 ### PyTorch Reference
 
-| Model         | Parameters | Val Loss @ 1100 | BPC  | Time  |
-| ------------- | ---------- | --------------- | ---- | ----- |
-| **Megalodon** | 11.3M      | **1.45**        | 2.09 | 8m    |
-| Llama         | 12.5M      | 1.54            | 2.22 | 3m    |
+| Model         | Parameters | Val Loss @ 1100 | BPC  | Time |
+| ------------- | ---------- | --------------- | ---- | ---- |
+| **Megalodon** | 11.3M      | **1.45**        | 2.09 | 8m   |
+| Llama         | 12.5M      | 1.54            | 2.22 | 3m   |
 
 ### JAX vs PyTorch
 

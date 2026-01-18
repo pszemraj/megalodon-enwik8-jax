@@ -33,13 +33,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-checkpoint = [
-    "orbax-checkpoint>=0.5.0",
-]
-dev = [
-    "pytest>=8.0",
-    "ruff>=0.4.0",
-]
+checkpoint = ["orbax-checkpoint>=0.5.0"]
+dev = ["pytest>=8.0", "ruff>=0.4.0"]
 
 [project.scripts]
 train-megalodon = "megalodon_enwik8_jax.cli:train_main"
@@ -55,7 +50,7 @@ exclude = ["vendor"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
-ignore = ["E501", "F722", "SIM108"]  # F722: jaxtyping; SIM108: ternary style
+ignore = ["E501", "F722", "SIM108"]                   # F722: jaxtyping; SIM108: ternary style
 
 [tool.ruff.lint.isort]
 known-first-party = ["megalodon_enwik8_jax"]
