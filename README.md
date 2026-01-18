@@ -63,7 +63,7 @@ megalodon-enwik8-jax/
 ├── configs/              # Training configs
 ├── data/                 # enwik8.gz (tracked in this repo)
 ├── vendor/               # PyTorch reference (submodule)
-├── train.py              # Thin wrapper for package CLI
+├── train.py              # Training script
 └── inference.py
 ```
 
