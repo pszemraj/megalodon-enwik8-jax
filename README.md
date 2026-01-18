@@ -39,16 +39,12 @@ pip install -e .
 
 ```bash
 XLA_PYTHON_CLIENT_PREALLOCATE=false python train.py --config configs/megalodon_multichunk_512.yaml
-# or via entrypoint
-XLA_PYTHON_CLIENT_PREALLOCATE=false train-megalodon --config configs/megalodon_multichunk_512.yaml
 ```
 
 ## Inference
 
 ```bash
 XLA_PYTHON_CLIENT_PREALLOCATE=false python inference.py --ckpt runs/megalodon/checkpoint_final.eqx --prompt "The "
-# or via entrypoint
-XLA_PYTHON_CLIENT_PREALLOCATE=false infer-megalodon --ckpt runs/megalodon/checkpoint_final.eqx --prompt "The "
 ```
 
 ## Project Structure

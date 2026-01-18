@@ -36,10 +36,6 @@ dependencies = [
 checkpoint = ["orbax-checkpoint>=0.5.0"]
 dev = ["pytest>=8.0", "ruff>=0.4.0"]
 
-[project.scripts]
-train-megalodon = "megalodon_enwik8_jax.cli:train_main"
-infer-megalodon = "megalodon_enwik8_jax.cli:inference_main"
-
 [tool.hatch.version]
 source = "vcs"
 
