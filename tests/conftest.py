@@ -2,25 +2,31 @@
 
 from __future__ import annotations
 
+import os
+from typing import Any
+
+os.environ.setdefault("JAX_PLATFORM_NAME", "cpu")
+os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+
 import jax
 import numpy as np
 import pytest
 
 
 @pytest.fixture
-def rng():
+def rng() -> np.random.Generator:
     """Numpy random generator for reproducible tests."""
     return np.random.default_rng(42)
 
 
 @pytest.fixture
-def key():
+def key() -> jax.Array:
     """JAX PRNG key for reproducible tests."""
     return jax.random.PRNGKey(42)
 
 
 @pytest.fixture
-def test_config():
+def test_config() -> dict[str, Any]:
     """Minimal config for testing."""
     return {
         "model": "llama",
@@ -52,7 +58,7 @@ def test_config():
 
 
 @pytest.fixture
-def megalodon_config():
+def megalodon_config() -> dict[str, Any]:
     """Minimal Megalodon config for testing."""
     return {
         "model": "megalodon",

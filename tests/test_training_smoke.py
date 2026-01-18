@@ -2,20 +2,30 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import jax
 import numpy as np
 
 from megalodon_enwik8_jax.data import load_enwik8, sample_accum_batch, sample_batch
 from megalodon_enwik8_jax.models import build_model
-from megalodon_enwik8_jax.optim import build_optimizer
-from megalodon_enwik8_jax.train_state import create_train_state
-from megalodon_enwik8_jax.training import make_eval_step, make_train_step
+from megalodon_enwik8_jax.training import (
+    build_optimizer,
+    create_train_state,
+    make_eval_step,
+    make_train_step,
+)
 
 
 class TestTrainingSmokeTest:
     """Smoke tests for training functionality."""
 
-    def test_llama_loss_decreases(self, key, test_config, rng):
+    def test_llama_loss_decreases(
+        self,
+        key: jax.Array,
+        test_config: dict[str, Any],
+        rng: np.random.Generator,
+    ) -> None:
         """Llama training loss decreases over a few steps."""
         # Load data
         train_data, _ = load_enwik8(test_config["data_path"])
@@ -52,7 +62,12 @@ class TestTrainingSmokeTest:
         # Just check that final loss is less than initial
         assert losses[-1] < losses[0], f"Loss didn't decrease: {losses}"
 
-    def test_llama_grad_norm_finite(self, key, test_config, rng):
+    def test_llama_grad_norm_finite(
+        self,
+        key: jax.Array,
+        test_config: dict[str, Any],
+        rng: np.random.Generator,
+    ) -> None:
         """Gradient norms are finite during Llama training."""
         train_data, _ = load_enwik8(test_config["data_path"])
 
@@ -77,7 +92,12 @@ class TestTrainingSmokeTest:
         assert np.isfinite(grad_norm)
         assert grad_norm >= 0
 
-    def test_megalodon_loss_finite(self, key, megalodon_config, rng):
+    def test_megalodon_loss_finite(
+        self,
+        key: jax.Array,
+        megalodon_config: dict[str, Any],
+        rng: np.random.Generator,
+    ) -> None:
         """Megalodon training produces finite loss."""
         train_data, _ = load_enwik8(megalodon_config["data_path"])
 
@@ -105,7 +125,12 @@ class TestTrainingSmokeTest:
 class TestEvalStep:
     """Tests for evaluation step."""
 
-    def test_eval_step_returns_scalar(self, key, test_config, rng):
+    def test_eval_step_returns_scalar(
+        self,
+        key: jax.Array,
+        test_config: dict[str, Any],
+        rng: np.random.Generator,
+    ) -> None:
         """eval_step returns scalar loss."""
         train_data, val_data = load_enwik8(test_config["data_path"])
 
@@ -121,7 +146,12 @@ class TestEvalStep:
         assert loss.shape == ()  # Scalar
         assert np.isfinite(float(loss))
 
-    def test_eval_deterministic(self, key, test_config, rng):
+    def test_eval_deterministic(
+        self,
+        key: jax.Array,
+        test_config: dict[str, Any],
+        rng: np.random.Generator,
+    ) -> None:
         """eval_step produces same result for same input."""
         _, val_data = load_enwik8(test_config["data_path"])
 
@@ -142,7 +172,12 @@ class TestEvalStep:
 class TestTrainState:
     """Tests for training state management."""
 
-    def test_state_step_increments(self, key, test_config, rng):
+    def test_state_step_increments(
+        self,
+        key: jax.Array,
+        test_config: dict[str, Any],
+        rng: np.random.Generator,
+    ) -> None:
         """Training state step increments after each train_step."""
         train_data, _ = load_enwik8(test_config["data_path"])
 

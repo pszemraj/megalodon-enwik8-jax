@@ -2,17 +2,24 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 
 from megalodon_enwik8_jax.models import build_model, forward_model
-from megalodon_enwik8_jax.utils import count_params
+
+
+def count_params(model: eqx.Module) -> int:
+    params, _ = eqx.partition(model, eqx.is_array)
+    return sum(x.size for x in jax.tree.leaves(params))
 
 
 class TestLlamaModel:
     """Tests for Llama model."""
 
-    def test_llama_forward_shape(self, key, test_config):
+    def test_llama_forward_shape(self, key: jax.Array, test_config: dict[str, Any]) -> None:
         """Llama forward produces correct output shape."""
         model = build_model(test_config, key)
 
@@ -24,7 +31,7 @@ class TestLlamaModel:
         assert logits.shape == (batch_size, seq_len, 256)
         assert cache is None  # No cache when not requested
 
-    def test_llama_forward_with_cache(self, key, test_config):
+    def test_llama_forward_with_cache(self, key: jax.Array, test_config: dict[str, Any]) -> None:
         """Llama forward returns cache when requested."""
         model = build_model(test_config, key)
 
@@ -38,7 +45,7 @@ class TestLlamaModel:
         # Cache should be a list of per-layer caches
         assert len(cache) == test_config["depth"]
 
-    def test_llama_param_count(self, key, test_config):
+    def test_llama_param_count(self, key: jax.Array, test_config: dict[str, Any]) -> None:
         """Llama has expected parameter count."""
         model = build_model(test_config, key)
         n_params = count_params(model)
@@ -48,7 +55,7 @@ class TestLlamaModel:
         # Should be in reasonable range for tiny model
         assert 10_000 < n_params < 1_000_000
 
-    def test_llama_output_dtype(self, key, test_config):
+    def test_llama_output_dtype(self, key: jax.Array, test_config: dict[str, Any]) -> None:
         """Llama outputs consistent dtype."""
         model = build_model(test_config, key)
         input_ids = jax.random.randint(key, (1, 16), 0, 256)
@@ -62,7 +69,11 @@ class TestLlamaModel:
 class TestMegalodonModel:
     """Tests for Megalodon model wrapper."""
 
-    def test_megalodon_forward_shape(self, key, megalodon_config):
+    def test_megalodon_forward_shape(
+        self,
+        key: jax.Array,
+        megalodon_config: dict[str, Any],
+    ) -> None:
         """Megalodon forward produces correct output shape."""
         model = build_model(megalodon_config, key)
 
@@ -73,7 +84,11 @@ class TestMegalodonModel:
 
         assert logits.shape == (batch_size, seq_len, 256)
 
-    def test_megalodon_forward_with_cache(self, key, megalodon_config):
+    def test_megalodon_forward_with_cache(
+        self,
+        key: jax.Array,
+        megalodon_config: dict[str, Any],
+    ) -> None:
         """Megalodon forward returns cache when requested."""
         model = build_model(megalodon_config, key)
 
@@ -86,7 +101,11 @@ class TestMegalodonModel:
         # Cache presence depends on megalodon-jax implementation
         # At minimum, the call should succeed
 
-    def test_megalodon_param_count(self, key, megalodon_config):
+    def test_megalodon_param_count(
+        self,
+        key: jax.Array,
+        megalodon_config: dict[str, Any],
+    ) -> None:
         """Megalodon has expected parameter count."""
         model = build_model(megalodon_config, key)
         n_params = count_params(model)
@@ -98,7 +117,11 @@ class TestMegalodonModel:
 class TestModelInterface:
     """Tests for unified model interface."""
 
-    def test_build_model_dispatches_llama(self, key, test_config):
+    def test_build_model_dispatches_llama(
+        self,
+        key: jax.Array,
+        test_config: dict[str, Any],
+    ) -> None:
         """build_model creates Llama for model='llama'."""
         model = build_model(test_config, key)
         # Should be a LlamaLM instance
@@ -106,14 +129,22 @@ class TestModelInterface:
         assert hasattr(model, "layers")
         assert hasattr(model, "norm")
 
-    def test_build_model_dispatches_megalodon(self, key, megalodon_config):
+    def test_build_model_dispatches_megalodon(
+        self,
+        key: jax.Array,
+        megalodon_config: dict[str, Any],
+    ) -> None:
         """build_model creates Megalodon for model='megalodon'."""
         model = build_model(megalodon_config, key)
         # Should be a MegalodonForCausalLM with model and config attributes
         assert hasattr(model, "model")
         assert hasattr(model, "config")
 
-    def test_forward_model_deterministic(self, key, test_config):
+    def test_forward_model_deterministic(
+        self,
+        key: jax.Array,
+        test_config: dict[str, Any],
+    ) -> None:
         """forward_model produces same output when deterministic=True."""
         model = build_model(test_config, key)
         input_ids = jax.random.randint(key, (1, 16), 0, 256)

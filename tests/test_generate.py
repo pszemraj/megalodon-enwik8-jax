@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import jax
 import jax.numpy as jnp
 
@@ -12,7 +14,11 @@ from megalodon_enwik8_jax.models import build_model
 class TestGenerate:
     """Tests for generation function."""
 
-    def test_generate_returns_correct_shape(self, key, test_config):
+    def test_generate_returns_correct_shape(
+        self,
+        key: jax.Array,
+        test_config: dict[str, Any],
+    ) -> None:
         """generate returns [B, T_prompt + max_new_tokens] array."""
         key, model_key = jax.random.split(key)
         model = build_model(test_config, model_key)
@@ -32,7 +38,11 @@ class TestGenerate:
 
         assert generated.shape == (batch_size, prompt_len + max_new_tokens)
 
-    def test_generate_preserves_prompt(self, key, test_config):
+    def test_generate_preserves_prompt(
+        self,
+        key: jax.Array,
+        test_config: dict[str, Any],
+    ) -> None:
         """generate preserves the original prompt tokens."""
         key, model_key = jax.random.split(key)
         model = build_model(test_config, model_key)
@@ -53,7 +63,11 @@ class TestGenerate:
         # First prompt_len tokens should match original
         assert jnp.array_equal(generated[:, :prompt_len], prompt_ids)
 
-    def test_generate_tokens_in_valid_range(self, key, test_config):
+    def test_generate_tokens_in_valid_range(
+        self,
+        key: jax.Array,
+        test_config: dict[str, Any],
+    ) -> None:
         """All generated tokens should be in [0, 255]."""
         key, model_key = jax.random.split(key)
         model = build_model(test_config, model_key)
@@ -72,7 +86,11 @@ class TestGenerate:
         assert generated.min() >= 0
         assert generated.max() <= 255
 
-    def test_generate_with_min_p(self, key, test_config):
+    def test_generate_with_min_p(
+        self,
+        key: jax.Array,
+        test_config: dict[str, Any],
+    ) -> None:
         """generate works with min_p sampling."""
         key, model_key = jax.random.split(key)
         model = build_model(test_config, model_key)
@@ -91,7 +109,11 @@ class TestGenerate:
 
         assert generated.shape == (1, 24)
 
-    def test_generate_deterministic_with_same_key(self, key, test_config):
+    def test_generate_deterministic_with_same_key(
+        self,
+        key: jax.Array,
+        test_config: dict[str, Any],
+    ) -> None:
         """generate produces same output with same PRNG key."""
         key, model_key = jax.random.split(key)
         model = build_model(test_config, model_key)
@@ -120,7 +142,7 @@ class TestGenerate:
 class TestSamplingPrimitives:
     """Tests for sampling primitive functions."""
 
-    def test_apply_temperature_scaling(self, key):
+    def test_apply_temperature_scaling(self, key: jax.Array) -> None:
         """Temperature scales logits correctly."""
         logits = jnp.array([[1.0, 2.0, 3.0]])
 
@@ -136,7 +158,7 @@ class TestSamplingPrimitives:
         scaled = apply_temperature(logits, 0.5)
         assert jnp.allclose(scaled, logits * 2.0)
 
-    def test_apply_min_p_masks_low_prob(self, key):
+    def test_apply_min_p_masks_low_prob(self, key: jax.Array) -> None:
         """min_p masks tokens below threshold."""
         # Logits that give clear probability differences
         logits = jnp.array([[0.0, -10.0, -10.0]])  # First token has ~100% prob
@@ -153,7 +175,7 @@ class TestSamplingPrimitives:
             if prob < threshold:
                 assert filtered[0, i] == float("-inf")
 
-    def test_sample_token_valid_output(self, key):
+    def test_sample_token_valid_output(self, key: jax.Array) -> None:
         """sample_token returns valid tokens."""
         logits = jnp.array([[1.0, 2.0, 3.0]])
 
@@ -164,7 +186,7 @@ class TestSamplingPrimitives:
         assert tokens.shape == (1,)
         assert 0 <= int(tokens[0]) < 3
 
-    def test_sample_token_respects_distribution(self, key):
+    def test_sample_token_respects_distribution(self, key: jax.Array) -> None:
         """sample_token samples according to softmax distribution."""
         # Heavily biased logits - token 2 should be sampled almost always
         logits = jnp.array([[-100.0, -100.0, 100.0]])
