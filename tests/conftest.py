@@ -1,9 +1,16 @@
+# ruff: noqa: E402
 """Pytest configuration and fixtures for megalodon-enwik8-jax tests."""
 
 from __future__ import annotations
 
+import os
 from collections.abc import Generator
 from typing import Any
+
+_TRITON_FLAG = "--xla_gpu_enable_triton_gemm=false"
+_xla_flags = os.environ.get("XLA_FLAGS", "")
+if _TRITON_FLAG not in _xla_flags:
+    os.environ["XLA_FLAGS"] = f"{_xla_flags} {_TRITON_FLAG}".strip()
 
 import jax
 import jax.numpy as jnp

@@ -51,7 +51,7 @@ def test_forward_uses_gpu(gpu_device: jax.Device) -> None:
         input_ids = jax.random.randint(key, (1, 4), 0, 256)
         logits, _ = forward_model(model, input_ids)
 
-    assert logits.device().platform == "gpu"
+    assert logits.device.platform == "gpu"
 
 
 @pytest.mark.gpu
@@ -69,7 +69,7 @@ def test_generate_uses_gpu(gpu_device: jax.Device) -> None:
             key=key,
         )
 
-    assert generated.device().platform == "gpu"
+    assert generated.device.platform == "gpu"
     assert generated.shape == (1, 6)
 
 
@@ -96,4 +96,4 @@ def test_train_step_uses_gpu(gpu_device: jax.Device) -> None:
 
         _, metrics = train_step(state, input_ids, labels)
 
-    assert metrics["loss"].device().platform == "gpu"
+    assert metrics["loss"].device.platform == "gpu"
