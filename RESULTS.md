@@ -90,14 +90,12 @@
 
 ### Performance Notes
 
-**Generation Overhead**: The `generate()` function uses a Python loop that triggers repeated JIT compilation for Megalodon's complex streaming cache logic. Impact:
+**Generation**: Uses megalodon-jax library's `jax.lax.scan`-based generate() for efficient tracing.
 
 | Config | Megalodon Time | Llama Time |
 |--------|---------------|------------|
-| With generation (every 100 steps) | ~43m | ~4m |
+| With generation (every 100 steps) | ~3m | ~4m |
 | Without generation | ~1m | ~50s |
-
-Generation is **disabled by default** in `configs/megalodon_multichunk_512.yaml` for performance. Enable with `generate_every: 100` if sample outputs are needed.
 
 ### Key Observations
 

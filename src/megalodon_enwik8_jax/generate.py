@@ -8,6 +8,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Int
 
 from .models import forward_model
+from .models.llama import LlamaLM
 
 
 def apply_temperature(logits: jax.Array, temperature: float) -> jax.Array:
@@ -55,6 +56,36 @@ def sample_token(
     return key, tokens
 
 
+def _generate_llama(
+    model: LlamaLM,
+    prompt_ids: Int[Array, "batch seq"],
+    max_new_tokens: int,
+    temperature: float,
+    min_p: float,
+    key: jax.Array,
+) -> Int[Array, "batch total_seq"]:
+    """Generate for Llama using Python loop (fast for simple attention)."""
+    logits, cache = forward_model(model, prompt_ids, return_cache=True, deterministic=True)
+
+    last_logits = logits[:, -1, :]
+    key, next_token = sample_token(key, last_logits, temperature, min_p)
+    next_token = next_token[:, None]
+
+    generated = [next_token]
+
+    for _ in range(max_new_tokens - 1):
+        logits, cache = forward_model(
+            model, next_token, cache=cache, return_cache=True, deterministic=True
+        )
+        last_logits = logits[:, -1, :]
+        key, next_token = sample_token(key, last_logits, temperature, min_p)
+        next_token = next_token[:, None]
+        generated.append(next_token)
+
+    generated = jnp.concatenate(generated, axis=1)
+    return jnp.concatenate([prompt_ids, generated], axis=1)
+
+
 def generate(
     model: eqx.Module,
     prompt_ids: Int[Array, "batch seq"],
@@ -65,8 +96,9 @@ def generate(
 ) -> Int[Array, "batch total_seq"]:
     """Generate text autoregressively with cache-based decoding.
 
-    Works for both Llama and Megalodon models using the unified forward_model
-    interface which handles model-specific cache initialization.
+    For Megalodon, uses the megalodon-jax library's generate() which uses
+    jax.lax.scan for efficient tracing. For Llama, uses a Python loop
+    (still fast due to simpler cache logic).
 
     Args:
         model: LlamaLM or MegalodonForCausalLM model.
@@ -82,25 +114,23 @@ def generate(
     if key is None:
         key = jax.random.PRNGKey(0)
 
-    # Prefill: process prompt and get initial cache
-    logits, cache = forward_model(model, prompt_ids, return_cache=True, deterministic=True)
+    # Dispatch based on model type
+    if isinstance(model, LlamaLM):
+        return _generate_llama(model, prompt_ids, max_new_tokens, temperature, min_p, key)
 
-    # Sample first new token
-    last_logits = logits[:, -1, :]
-    key, next_token = sample_token(key, last_logits, temperature, min_p)
-    next_token = next_token[:, None]
+    # For Megalodon, use the library's efficient jax.lax.scan-based generate
+    from megalodon_jax import generate as megalodon_generate
 
-    generated = [next_token]
+    # megalodon-jax uses top_p, not min_p. Convert: min_p ~= 1 - top_p
+    # For simplicity, if min_p > 0, use top_p = 1 - min_p (approximate)
+    top_p = (1.0 - min_p) if min_p > 0 else None
 
-    # Decode loop
-    for _ in range(max_new_tokens - 1):
-        logits, cache = forward_model(
-            model, next_token, cache=cache, return_cache=True, deterministic=True
-        )
-        last_logits = logits[:, -1, :]
-        key, next_token = sample_token(key, last_logits, temperature, min_p)
-        next_token = next_token[:, None]
-        generated.append(next_token)
-
-    generated = jnp.concatenate(generated, axis=1)
-    return jnp.concatenate([prompt_ids, generated], axis=1)
+    result, _, _ = megalodon_generate(
+        model,
+        prompt_ids,
+        max_new_tokens=max_new_tokens,
+        key=key,
+        temperature=temperature,
+        top_p=top_p,
+    )
+    return result
