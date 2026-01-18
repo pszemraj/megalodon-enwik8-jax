@@ -2,15 +2,54 @@
 
 from __future__ import annotations
 
-import os
+from collections.abc import Generator
 from typing import Any
 
-os.environ.setdefault("JAX_PLATFORM_NAME", "cpu")
-os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
-
 import jax
+import jax.numpy as jnp
 import numpy as np
 import pytest
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line("markers", "gpu: run tests that require a GPU")
+
+
+@pytest.fixture(scope="session")
+def cpu_device() -> jax.Device:
+    return jax.devices("cpu")[0]
+
+
+@pytest.fixture(scope="session")
+def gpu_device() -> jax.Device:
+    try:
+        gpus = jax.devices("gpu")
+    except RuntimeError:
+        gpus = []
+    if not gpus:
+        pytest.skip("GPU not available")
+    device = gpus[0]
+    try:
+        with jax.default_device(device):
+            probe = jnp.ones((8, 8), dtype=jnp.float32)
+            (probe @ probe).block_until_ready()
+    except jax.errors.JaxRuntimeError as exc:
+        if "RESOURCE_EXHAUSTED" in str(exc):
+            pytest.skip("GPU detected but not usable (out of memory).")
+        raise
+    return device
+
+
+@pytest.fixture(autouse=True)
+def use_cpu_by_default(
+    request: pytest.FixtureRequest,
+    cpu_device: jax.Device,
+) -> Generator[None, None, None]:
+    if request.node.get_closest_marker("gpu"):
+        yield
+        return
+    with jax.default_device(cpu_device):
+        yield
 
 
 @pytest.fixture
