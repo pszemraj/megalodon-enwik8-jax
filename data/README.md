@@ -1,7 +1,3 @@
-# Dataset location
+# Data source
 
-Place `enwik8.gz` in this directory, or run:
-
-```bash
-python scripts/download_enwik8.py
-```
+The enwik8 data was downloaded from the Hutter prize page: http://prize.hutter1.net/
