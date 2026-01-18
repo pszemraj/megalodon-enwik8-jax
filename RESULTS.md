@@ -2,9 +2,6 @@
 
 > [!IMPORTANT]
 > **Disclaimer**: This is a sanity check for JAX/PyTorch numerical parity, not a rigorous benchmark. Both models use identical hyperparameters with no per-architecture tuning.
->
-> **Update**: The runs below predate fixes for dtype enforcement, true gradient accumulation, and RoPE buffer handling.
-> Re-run after these fixes for updated numbers.
 
 ## Setup
 
@@ -15,6 +12,7 @@
 - **Learning rate**: 4e-4
 - **Precision**: bfloat16 (now enforced via trainable-parameter casting)
 - **Hardware**: NVIDIA GeForce RTX 5090
+- **XLA_FLAGS**: `--xla_gpu_enable_triton_gemm=false`
 
 ## Results
 
@@ -22,8 +20,8 @@
 
 | Model         | Parameters | Val Loss @ 1100 | BPC  | Time  |
 | ------------- | ---------- | --------------- | ---- | ----- |
-| **Megalodon** | 11.3M      | 1.57            | 2.27 | ~3m   |
-| Llama         | 12.9M      | 1.66            | 2.39 | ~3.5m |
+| **Megalodon** | 11.28M     | 1.62            | 2.34 | ~3.4m |
+| Llama         | 12.49M     | 1.61            | 2.32 | ~4.0m |
 
 ### PyTorch Reference
 
@@ -36,23 +34,25 @@
 
 | Architecture | JAX Loss | PyTorch Loss | Δ Loss | Δ %   |
 | ------------ | -------- | ------------ | ------ | ----- |
-| Megalodon    | 1.57     | 1.45         | +0.12  | +8.3% |
-| Llama        | 1.66     | 1.54         | +0.12  | +7.8% |
+| Megalodon    | 1.62     | 1.45         | +0.17  | +11.7% |
+| Llama        | 1.61     | 1.54         | +0.07  | +4.5% |
 
-Both JAX implementations show ~8% higher final validation loss compared to PyTorch. However, both achieve better **peak losses** mid-training (JAX Megalodon: 1.35 @ step 800 vs PyTorch: 1.45), suggesting similar modeling capacity with different optimization dynamics.
+JAX Megalodon remains higher loss than PyTorch, while JAX Llama is closer. JAX Megalodon hits a
+lower loss mid-training (1.40 @ step 800) before rising again, while PyTorch Megalodon improves
+to 1.45 later, suggesting similar modeling capacity with different optimization dynamics.
 
 ## Training Curves
 
 | Step | JAX Megalodon | PyTorch Megalodon | JAX Llama | PyTorch Llama |
 | ---- | ------------- | ----------------- | --------- | ------------- |
-| 0    | 17.9*         | 5.67              | 5.66      | 5.68          |
-| 100  | 2.15          | 2.03              | 2.50      | 2.60          |
-| 200  | 1.85          | 1.70              | 2.17      | 2.29          |
-| 400  | 1.73          | 1.55              | 1.83      | 1.87          |
-| 600  | 1.65          | 1.57              | 1.72      | 1.71          |
-| 800  | 1.35          | 1.51              | 1.40      | 1.64          |
-| 1000 | 1.57          | 1.45              | 1.62      | 1.67          |
-| 1100 | 1.57          | 1.45              | 1.66      | 1.54          |
+| 0    | 17.92*        | 5.67              | 5.66      | 5.68          |
+| 100  | 2.19          | 2.03              | 2.49      | 2.60          |
+| 200  | 1.92          | 1.70              | 2.14      | 2.29          |
+| 400  | 1.78          | 1.55              | 1.82      | 1.87          |
+| 600  | 1.71          | 1.57              | 1.69      | 1.71          |
+| 800  | 1.40          | 1.51              | 1.37      | 1.64          |
+| 1000 | 1.62          | 1.45              | 1.59      | 1.67          |
+| 1100 | 1.62          | 1.45              | 1.61      | 1.54          |
 
 *High initial loss due to megalodon-jax He initialization vs PyTorch scaled init.
 
@@ -60,16 +60,15 @@ Both JAX implementations show ~8% higher final validation loss compared to PyTor
 
 | Model     | JAX        | PyTorch    | Match |
 | --------- | ---------- | ---------- | ----- |
-| Megalodon | 11,277,696 | 11,277,696 | ✓     |
-| Llama     | 12,883,392 | 12,489,792 | ~     |
+| Megalodon | 11,277,888 | 11,277,696 | ~     |
+| Llama     | 12,489,600 | 12,489,792 | ~     |
 
-JAX Llama previously included RoPE frequency buffers in the pytree. These are now excluded from
-trainable parameters and weight decay masks; recompute counts after re-running.
+JAX Llama excludes RoPE frequency buffers from trainable parameter counts and weight decay masks.
 
 ## Notes
 
-- **Megalodon outperforms Llama** in both frameworks (~6% lower loss)
-- **JAX is faster**: ~3m vs ~8m for Megalodon (JAX benefits from XLA fusion)
+- **Megalodon vs Llama**: In this run, Llama edges Megalodon by a small margin at step 1100.
+- **JAX is faster**: ~3.4m vs ~8m for Megalodon (JAX benefits from XLA fusion)
 - **Generation**: Uses megalodon-jax library's `jax.lax.scan`-based generate() for efficient autoregressive decoding
 - **Late-training variance**: Both JAX models show increased loss after step 800; likely LR schedule differences
 
@@ -77,8 +76,10 @@ trainable parameters and weight decay masks; recompute counts after re-running.
 
 ```bash
 # Megalodon
-XLA_PYTHON_CLIENT_PREALLOCATE=false python train.py --config configs/megalodon_multichunk_512.yaml
+XLA_PYTHON_CLIENT_PREALLOCATE=false XLA_FLAGS=--xla_gpu_enable_triton_gemm=false \\
+  python train.py --config configs/megalodon_multichunk_512.yaml
 
 # Llama
-XLA_PYTHON_CLIENT_PREALLOCATE=false python train.py --config configs/llama_512.yaml
+XLA_PYTHON_CLIENT_PREALLOCATE=false XLA_FLAGS=--xla_gpu_enable_triton_gemm=false \\
+  python train.py --config configs/llama_512.yaml
 ```
