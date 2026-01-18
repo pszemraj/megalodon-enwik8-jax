@@ -7,30 +7,34 @@ __version__ = "0.1.0"
 from .config import get_dtype, load_config, resolve_run_dir, validate_config
 from .data import decode_tokens, encode_prompt, load_enwik8, sample_accum_batch, sample_batch
 from .models import build_model, forward_model
-from .optim import build_optimizer
-from .train_state import TrainState, create_train_state
-from .training import bpc_from_loss, cross_entropy_loss
-from .utils import count_params, format_params, model_summary
+from .training import (
+    TrainState,
+    bpc_from_loss,
+    build_optimizer,
+    create_train_state,
+    cross_entropy_loss,
+)
 
 __all__ = [
     "__version__",
+    # Config
     "load_config",
     "validate_config",
     "resolve_run_dir",
     "get_dtype",
+    # Data
     "load_enwik8",
     "sample_batch",
     "sample_accum_batch",
     "encode_prompt",
     "decode_tokens",
+    # Training
     "cross_entropy_loss",
     "bpc_from_loss",
-    "build_model",
-    "forward_model",
     "build_optimizer",
     "TrainState",
     "create_train_state",
-    "count_params",
-    "format_params",
-    "model_summary",
+    # Models
+    "build_model",
+    "forward_model",
 ]

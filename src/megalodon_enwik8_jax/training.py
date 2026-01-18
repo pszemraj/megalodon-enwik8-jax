@@ -1,4 +1,4 @@
-"""Training step functions for JAX training loop."""
+"""Training infrastructure: state, optimizer, and step functions."""
 
 from __future__ import annotations
 
@@ -11,7 +11,101 @@ import optax
 from jaxtyping import Array, Float, Int
 
 from .models import forward_model
-from .train_state import TrainState
+
+# =============================================================================
+# TrainState
+# =============================================================================
+
+
+class TrainState(eqx.Module):
+    """Container for all mutable training state.
+
+    Using eqx.Module makes this a valid PyTree for JIT compilation.
+
+    Attributes:
+        step: Current training step (scalar int32).
+        model: Equinox model (pytree of arrays).
+        opt_state: Optax optimizer state.
+        key: JAX PRNG key for sampling/dropout.
+    """
+
+    step: jax.Array  # scalar int32
+    model: eqx.Module
+    opt_state: optax.OptState
+    key: jax.Array  # PRNGKey
+
+
+def create_train_state(
+    model: eqx.Module,
+    optimizer: optax.GradientTransformation,
+    key: jax.Array,
+    step: int = 0,
+) -> TrainState:
+    """Create initial training state.
+
+    Args:
+        model: Equinox model.
+        optimizer: Optax optimizer.
+        key: Initial PRNG key.
+        step: Initial step (default 0).
+
+    Returns:
+        Initialized TrainState.
+    """
+    params, _ = eqx.partition(model, eqx.is_array)
+    opt_state = optimizer.init(params)
+
+    return TrainState(
+        step=jnp.array(step, dtype=jnp.int32),
+        model=model,
+        opt_state=opt_state,
+        key=key,
+    )
+
+
+# =============================================================================
+# Optimizer
+# =============================================================================
+
+
+def build_optimizer(cfg: dict[str, Any]) -> optax.GradientTransformation:
+    """Build optax optimizer matching PyTorch Adam semantics.
+
+    PyTorch Adam with weight_decay uses coupled L2 regularization
+    (not decoupled AdamW). This function replicates that behavior.
+
+    Args:
+        cfg: Configuration dictionary containing:
+            - learning_rate: Learning rate (default 1e-3).
+            - weight_decay: L2 weight decay (default 0.0).
+            - grad_clip_norm: Max gradient norm (default 1.0).
+
+    Returns:
+        Optax gradient transformation.
+    """
+    lr = cfg.get("learning_rate", 1e-3)
+    weight_decay = cfg.get("weight_decay", 0.0)
+    grad_clip_norm = cfg.get("grad_clip_norm", 1.0)
+
+    transforms = []
+
+    # Gradient clipping
+    if grad_clip_norm > 0:
+        transforms.append(optax.clip_by_global_norm(grad_clip_norm))
+
+    # Coupled L2 weight decay (PyTorch Adam behavior)
+    if weight_decay > 0:
+        transforms.append(optax.add_decayed_weights(weight_decay))
+
+    # Adam optimizer
+    transforms.append(optax.adam(learning_rate=lr))
+
+    return optax.chain(*transforms)
+
+
+# =============================================================================
+# Loss functions
+# =============================================================================
 
 
 def cross_entropy_loss(logits: jax.Array, labels: jax.Array) -> jax.Array:
@@ -38,6 +132,11 @@ def cross_entropy_loss(logits: jax.Array, labels: jax.Array) -> jax.Array:
 def bpc_from_loss(loss: jax.Array) -> jax.Array:
     """Convert cross-entropy loss to bits-per-character."""
     return loss / jnp.log(2.0)
+
+
+# =============================================================================
+# Training step
+# =============================================================================
 
 
 def make_train_step(
@@ -113,6 +212,11 @@ def make_train_step(
         return new_state, metrics
 
     return train_step
+
+
+# =============================================================================
+# Evaluation
+# =============================================================================
 
 
 def make_eval_step(cfg: dict[str, Any]):

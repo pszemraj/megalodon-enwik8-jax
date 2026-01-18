@@ -16,6 +16,7 @@ import argparse
 import json
 from pathlib import Path
 
+import equinox as eqx
 import jax
 import numpy as np
 from tqdm.auto import tqdm
@@ -25,15 +26,31 @@ from megalodon_enwik8_jax.config import load_config, resolve_run_dir, validate_c
 from megalodon_enwik8_jax.data import decode_tokens, load_enwik8, sample_accum_batch, sample_batch
 from megalodon_enwik8_jax.generate import generate
 from megalodon_enwik8_jax.models import build_model
-from megalodon_enwik8_jax.optim import build_optimizer
-from megalodon_enwik8_jax.train_state import create_train_state
 from megalodon_enwik8_jax.training import (
     bpc_from_loss,
+    build_optimizer,
+    create_train_state,
     make_eval_step,
     make_train_step,
     run_validation,
 )
-from megalodon_enwik8_jax.utils import count_params, format_params
+
+
+def _count_params(model: eqx.Module) -> int:
+    """Count total parameters in an Equinox model."""
+    params, _ = eqx.partition(model, eqx.is_array)
+    return sum(x.size for x in jax.tree.leaves(params))
+
+
+def _format_params(n: int) -> str:
+    """Format parameter count with K/M/B suffix."""
+    if n >= 1e9:
+        return f"{n / 1e9:.2f}B"
+    elif n >= 1e6:
+        return f"{n / 1e6:.2f}M"
+    elif n >= 1e3:
+        return f"{n / 1e3:.1f}K"
+    return str(n)
 
 
 def log_metrics(path: Path, metrics: dict) -> None:
@@ -96,8 +113,8 @@ def main():
     print("Building model...")
     key, model_key = jax.random.split(key)
     model = build_model(cfg, model_key)
-    n_params = count_params(model)
-    print(f"Parameters: {format_params(n_params)} ({n_params:,})")
+    n_params = _count_params(model)
+    print(f"Parameters: {_format_params(n_params)} ({n_params:,})")
 
     # Build optimizer
     optimizer = build_optimizer(cfg)

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 
+import equinox as eqx
 import jax
 
 from megalodon_enwik8_jax.checkpoint import load_checkpoint, load_config_from_checkpoint
@@ -19,8 +20,24 @@ from megalodon_enwik8_jax.config import validate_config
 from megalodon_enwik8_jax.data import decode_tokens, encode_prompt
 from megalodon_enwik8_jax.generate import generate
 from megalodon_enwik8_jax.models import build_model
-from megalodon_enwik8_jax.optim import build_optimizer
-from megalodon_enwik8_jax.utils import count_params, format_params
+from megalodon_enwik8_jax.training import build_optimizer
+
+
+def _count_params(model: eqx.Module) -> int:
+    """Count total parameters in an Equinox model."""
+    params, _ = eqx.partition(model, eqx.is_array)
+    return sum(x.size for x in jax.tree.leaves(params))
+
+
+def _format_params(n: int) -> str:
+    """Format parameter count with K/M/B suffix."""
+    if n >= 1e9:
+        return f"{n / 1e9:.2f}B"
+    elif n >= 1e6:
+        return f"{n / 1e6:.2f}M"
+    elif n >= 1e3:
+        return f"{n / 1e3:.1f}K"
+    return str(n)
 
 
 def main():
@@ -103,8 +120,8 @@ def main():
         optimizer=optimizer,
     )
 
-    n_params = count_params(state.model)
-    print(f"Parameters: {format_params(n_params)} ({n_params:,})")
+    n_params = _count_params(state.model)
+    print(f"Parameters: {_format_params(n_params)} ({n_params:,})")
     print(f"Checkpoint step: {int(state.step)}")
 
     # Encode prompt

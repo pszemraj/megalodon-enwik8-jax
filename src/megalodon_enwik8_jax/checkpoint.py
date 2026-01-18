@@ -9,7 +9,7 @@ import equinox as eqx
 import jax
 import yaml
 
-from .train_state import TrainState, create_train_state
+from .training import TrainState, create_train_state
 
 
 def save_checkpoint(
