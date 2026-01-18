@@ -40,8 +40,11 @@ def _format_params(n: int) -> str:
     return str(n)
 
 
-def main():
-    """Main inference function."""
+def main() -> None:
+    """Run the inference CLI.
+
+    :return None: None.
+    """
     parser = argparse.ArgumentParser(
         description="Generate text from checkpoint",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,

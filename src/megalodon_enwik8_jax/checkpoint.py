@@ -162,6 +162,11 @@ def get_latest_checkpoint(run_dir: str | Path) -> Path | None:
 
     # Sort by step number (extract from filename)
     def get_step(p: Path) -> int:
+        """Extract step number from checkpoint filename.
+
+        :param Path p: Checkpoint path to parse.
+        :return int: Parsed step number, or -1 if unavailable.
+        """
         name = p.stem  # "checkpoint_1000"
         try:
             return int(name.split("_")[1])

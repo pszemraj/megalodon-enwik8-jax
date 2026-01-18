@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optax
 from jaxtyping import Array, Float, Int
 
 from .models import forward_model
+
+EvalStep = Callable[
+    [eqx.Module, Int[Array, "batch seq"], Int[Array, "batch seq"]],
+    Float[Array, ""],
+]
 
 # =============================================================================
 # TrainState
@@ -142,18 +149,18 @@ def bpc_from_loss(loss: jax.Array) -> jax.Array:
 def make_train_step(
     cfg: dict[str, Any],
     optimizer: optax.GradientTransformation,
-):
+) -> Callable[
+    [TrainState, Int[Array, "accum batch seq"], Int[Array, "accum batch seq"]],
+    tuple[TrainState, dict[str, Array]],
+]:
     """Create JIT-compiled training step function.
 
     Uses vmap for parallel loss computation across micro-batches,
     then single gradient computation on the averaged loss.
 
-    Args:
-        cfg: Configuration dictionary.
-        optimizer: Optax optimizer.
-
-    Returns:
-        JIT-compiled train_step function.
+    :param dict[str, Any] cfg: Configuration dictionary.
+    :param optax.GradientTransformation optimizer: Optax optimizer.
+    :return Callable: JIT-compiled train_step function.
     """
 
     @eqx.filter_jit
@@ -164,19 +171,35 @@ def make_train_step(
     ) -> tuple[TrainState, dict[str, Array]]:
         """Execute one training step with gradient accumulation.
 
-        Args:
-            state: Current training state.
-            input_ids: Input tokens of shape [A, B, T] where A=grad_accum.
-            labels: Target labels of shape [A, B, T].
-
-        Returns:
-            Tuple of (new_state, metrics) where metrics contains loss, grad_norm.
+        :param TrainState state: Current training state.
+        :param Int[Array, "accum batch seq"] input_ids: Input tokens of shape [A, B, T].
+        :param Int[Array, "accum batch seq"] labels: Target labels of shape [A, B, T].
+        :return tuple[TrainState, dict[str, Array]]: Updated state and metrics.
         """
 
-        def loss_fn(model, all_inputs, all_labels):
-            """Compute average loss across all micro-batches."""
+        def loss_fn(
+            model: eqx.Module,
+            all_inputs: Int[Array, "accum batch seq"],
+            all_labels: Int[Array, "accum batch seq"],
+        ) -> Float[Array, ""]:
+            """Compute average loss across all micro-batches.
 
-            def single_batch_loss(batch_input, batch_labels):
+            :param eqx.Module model: Model to evaluate.
+            :param Int[Array, "accum batch seq"] all_inputs: Input tokens for all micro-batches.
+            :param Int[Array, "accum batch seq"] all_labels: Target labels for all micro-batches.
+            :return Float[Array, ""]: Mean loss across micro-batches.
+            """
+
+            def single_batch_loss(
+                batch_input: Int[Array, "batch seq"],
+                batch_labels: Int[Array, "batch seq"],
+            ) -> Float[Array, ""]:
+                """Compute loss for a single micro-batch.
+
+                :param Int[Array, "batch seq"] batch_input: Input tokens for a micro-batch.
+                :param Int[Array, "batch seq"] batch_labels: Target labels for a micro-batch.
+                :return Float[Array, ""]: Loss for the micro-batch.
+                """
                 logits, _ = forward_model(model, batch_input, deterministic=True)
                 return cross_entropy_loss(logits, batch_labels)
 
@@ -219,14 +242,11 @@ def make_train_step(
 # =============================================================================
 
 
-def make_eval_step(cfg: dict[str, Any]):
+def make_eval_step(cfg: dict[str, Any]) -> EvalStep:
     """Create JIT-compiled evaluation step function.
 
-    Args:
-        cfg: Configuration dictionary.
-
-    Returns:
-        JIT-compiled eval_step function.
+    :param dict[str, Any] cfg: Configuration dictionary.
+    :return EvalStep: JIT-compiled eval_step function.
     """
 
     @eqx.filter_jit
@@ -237,13 +257,10 @@ def make_eval_step(cfg: dict[str, Any]):
     ) -> Float[Array, ""]:
         """Compute validation loss for a batch.
 
-        Args:
-            model: Model to evaluate.
-            input_ids: Input tokens of shape [B, T].
-            labels: Target labels of shape [B, T].
-
-        Returns:
-            Scalar loss value.
+        :param eqx.Module model: Model to evaluate.
+        :param Int[Array, "batch seq"] input_ids: Input tokens of shape [B, T].
+        :param Int[Array, "batch seq"] labels: Target labels of shape [B, T].
+        :return Float[Array, ""]: Scalar loss value.
         """
         logits, _ = forward_model(model, input_ids, deterministic=True)
         return cross_entropy_loss(logits, labels)
@@ -253,22 +270,19 @@ def make_eval_step(cfg: dict[str, Any]):
 
 def run_validation(
     model: eqx.Module,
-    eval_step,
-    val_data,
-    rng: Any,
+    eval_step: EvalStep,
+    val_data: np.ndarray,
+    rng: np.random.Generator,
     cfg: dict[str, Any],
 ) -> Float[Array, ""]:
     """Run validation over multiple batches.
 
-    Args:
-        model: Model to evaluate.
-        eval_step: JIT-compiled evaluation step.
-        val_data: Validation data (numpy uint8 array).
-        rng: Numpy random generator.
-        cfg: Configuration dictionary.
-
-    Returns:
-        Average validation loss.
+    :param eqx.Module model: Model to evaluate.
+    :param EvalStep eval_step: JIT-compiled evaluation step function.
+    :param numpy.ndarray val_data: Validation data as uint8 array.
+    :param numpy.random.Generator rng: Numpy random generator.
+    :param dict[str, Any] cfg: Configuration dictionary.
+    :return Float[Array, ""]: Average validation loss.
     """
     from .data import sample_batch
 

@@ -62,8 +62,11 @@ def log_metrics(path: Path, metrics: dict) -> None:
         )
 
 
-def main():
-    """Main training function."""
+def main() -> None:
+    """Run the training CLI.
+
+    :return None: None.
+    """
     parser = argparse.ArgumentParser(
         description="Train language model on enwik8",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,

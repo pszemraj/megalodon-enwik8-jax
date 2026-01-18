@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
+
+if TYPE_CHECKING:
+    from jax.typing import DTypeLike
 
 # Known config keys for validation - reject unknown keys to catch typos
 KNOWN_KEYS = frozenset(
@@ -176,14 +179,11 @@ def resolve_run_dir(cfg: dict[str, Any], override: str | None = None) -> Path:
     return Path(cfg.get("run_dir", "runs/default"))
 
 
-def get_dtype(cfg: dict[str, Any]):
+def get_dtype(cfg: dict[str, Any]) -> DTypeLike:
     """Get JAX dtype from config.
 
-    Args:
-        cfg: Configuration dictionary.
-
-    Returns:
-        jax.numpy dtype (bfloat16 or float32).
+    :param dict[str, Any] cfg: Configuration dictionary.
+    :return DTypeLike: JAX dtype (bfloat16 or float32).
     """
     import jax.numpy as jnp
 
