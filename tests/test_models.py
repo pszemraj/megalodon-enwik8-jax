@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from typing import Any
 
-import equinox as eqx
 import jax
 import jax.numpy as jnp
 
 from megalodon_enwik8_jax.models import build_model, forward_model
+from megalodon_enwik8_jax.params import count_trainable_params, make_trainable_mask
 
 
-def count_params(model: eqx.Module) -> int:
-    params, _ = eqx.partition(model, eqx.is_array)
-    return sum(x.size for x in jax.tree.leaves(params))
+def count_params(model: object) -> int:
+    trainable_mask = make_trainable_mask(model)
+    return count_trainable_params(model, trainable_mask)
 
 
 class TestLlamaModel:

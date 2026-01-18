@@ -9,6 +9,7 @@ import pytest
 
 from megalodon_enwik8_jax.generate import generate
 from megalodon_enwik8_jax.models import build_model, forward_model
+from megalodon_enwik8_jax.params import make_trainable_mask
 from megalodon_enwik8_jax.training import build_optimizer, create_train_state, make_train_step
 
 
@@ -80,11 +81,18 @@ def test_train_step_uses_gpu(gpu_device: jax.Device) -> None:
         key = jax.random.PRNGKey(0)
         cfg = _tiny_config()
         model = build_model(cfg, key)
+        trainable_mask = make_trainable_mask(model)
         optimizer = build_optimizer(cfg)
 
         key, state_key = jax.random.split(key)
-        state = create_train_state(model, optimizer, state_key, step=0)
-        train_step = make_train_step(cfg, optimizer)
+        state = create_train_state(
+            model,
+            optimizer,
+            state_key,
+            step=0,
+            trainable_mask=trainable_mask,
+        )
+        train_step = make_train_step(cfg, optimizer, trainable_mask)
 
         grad_accum = cfg["grad_accum_every"]
         batch_size = cfg["batch_size"]

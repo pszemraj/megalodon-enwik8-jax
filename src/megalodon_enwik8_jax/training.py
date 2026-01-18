@@ -13,6 +13,7 @@ import optax
 from jaxtyping import Array, Float, Int
 
 from .models import forward_model
+from .params import make_trainable_mask
 
 EvalStep = Callable[
     [eqx.Module, Int[Array, "batch seq"], Int[Array, "batch seq"]],
@@ -47,6 +48,7 @@ def create_train_state(
     optimizer: optax.GradientTransformation,
     key: jax.Array,
     step: int = 0,
+    trainable_mask: Any | None = None,
 ) -> TrainState:
     """Create initial training state.
 
@@ -55,11 +57,15 @@ def create_train_state(
         optimizer: Optax optimizer.
         key: Initial PRNG key.
         step: Initial step (default 0).
+        trainable_mask: Optional pytree mask of trainable parameters.
 
     Returns:
         Initialized TrainState.
     """
-    params, _ = eqx.partition(model, eqx.is_array)
+    if trainable_mask is None:
+        trainable_mask = make_trainable_mask(model)
+
+    params, _ = eqx.partition(model, trainable_mask)
     opt_state = optimizer.init(params)
 
     return TrainState(
@@ -149,21 +155,27 @@ def bpc_from_loss(loss: jax.Array) -> jax.Array:
 def make_train_step(
     cfg: dict[str, Any],
     optimizer: optax.GradientTransformation,
+    trainable_mask: Any,
 ) -> Callable[
     [TrainState, Int[Array, "accum batch seq"], Int[Array, "accum batch seq"]],
     tuple[TrainState, dict[str, Array]],
 ]:
     """Create JIT-compiled training step function.
 
-    Uses vmap for parallel loss computation across micro-batches,
-    then single gradient computation on the averaged loss.
+    Uses jax.lax.scan for sequential micro-batches to implement
+    true gradient accumulation without scaling memory with A.
 
     :param dict[str, Any] cfg: Configuration dictionary.
     :param optax.GradientTransformation optimizer: Optax optimizer.
+    :param Any trainable_mask: Pytree mask of trainable parameters.
     :return Callable: JIT-compiled train_step function.
     """
+    use_jit = cfg.get("jit", True)
+    dropout_enabled = any(
+        cfg.get(key, 0.0) > 0.0 for key in ("dropout", "attention_dropout", "hidden_dropout")
+    )
+    deterministic = not dropout_enabled
 
-    @eqx.filter_jit
     def train_step(
         state: TrainState,
         input_ids: Int[Array, "accum batch seq"],
@@ -177,44 +189,69 @@ def make_train_step(
         :return tuple[TrainState, dict[str, Array]]: Updated state and metrics.
         """
 
+        params, static = eqx.partition(state.model, trainable_mask)
+
         def loss_fn(
-            model: eqx.Module,
-            all_inputs: Int[Array, "accum batch seq"],
-            all_labels: Int[Array, "accum batch seq"],
+            params: eqx.Module,
+            batch_input: Int[Array, "batch seq"],
+            batch_labels: Int[Array, "batch seq"],
+            key: jax.Array,
         ) -> Float[Array, ""]:
-            """Compute average loss across all micro-batches.
+            """Compute loss for a single micro-batch."""
+            model = eqx.combine(params, static)
+            logits, _ = forward_model(model, batch_input, deterministic=deterministic, key=key)
+            return cross_entropy_loss(logits, batch_labels)
 
-            :param eqx.Module model: Model to evaluate.
-            :param Int[Array, "accum batch seq"] all_inputs: Input tokens for all micro-batches.
-            :param Int[Array, "accum batch seq"] all_labels: Target labels for all micro-batches.
-            :return Float[Array, ""]: Mean loss across micro-batches.
-            """
+        def _add_trees(left: Any, right: Any) -> Any:
+            if left is None:
+                return None
+            return left + right
 
-            def single_batch_loss(
-                batch_input: Int[Array, "batch seq"],
-                batch_labels: Int[Array, "batch seq"],
-            ) -> Float[Array, ""]:
-                """Compute loss for a single micro-batch.
+        def _scale_tree(value: Any, scale: float) -> Any:
+            if value is None:
+                return None
+            return value * scale
 
-                :param Int[Array, "batch seq"] batch_input: Input tokens for a micro-batch.
-                :param Int[Array, "batch seq"] batch_labels: Target labels for a micro-batch.
-                :return Float[Array, ""]: Loss for the micro-batch.
-                """
-                logits, _ = forward_model(model, batch_input, deterministic=True)
-                return cross_entropy_loss(logits, batch_labels)
+        def micro_step(
+            carry: tuple[jax.Array, Any, jax.Array],
+            micro_batch: tuple[Int[Array, "batch seq"], Int[Array, "batch seq"]],
+        ) -> tuple[tuple[jax.Array, Any, jax.Array], None]:
+            key, grads_accum, loss_accum = carry
+            batch_input, batch_labels = micro_batch
+            key, subkey = jax.random.split(key)
+            loss, grads = eqx.filter_value_and_grad(loss_fn)(
+                params, batch_input, batch_labels, subkey
+            )
+            grads_accum = jax.tree_util.tree_map(
+                _add_trees, grads_accum, grads, is_leaf=lambda x: x is None
+            )
+            loss_accum = loss_accum + loss
+            return (key, grads_accum, loss_accum), None
 
-            # vmap over the accumulation dimension
-            losses = jax.vmap(single_batch_loss)(all_inputs, all_labels)
-            return losses.mean()
+        grads_init = jax.tree_util.tree_map(
+            lambda x: jnp.zeros_like(x) if x is not None else None,
+            params,
+            is_leaf=lambda x: x is None,
+        )
+        loss_init = jnp.array(0.0, dtype=jnp.float32)
+        (new_key, grads_accum, loss_accum), _ = jax.lax.scan(
+            micro_step,
+            (state.key, grads_init, loss_init),
+            (input_ids, labels),
+        )
 
-        # Single gradient computation on averaged loss
-        loss, grads = eqx.filter_value_and_grad(loss_fn)(state.model, input_ids, labels)
+        scale = 1.0 / input_ids.shape[0]
+        loss = loss_accum * scale
+        grads = jax.tree_util.tree_map(
+            lambda value: _scale_tree(value, scale),
+            grads_accum,
+            is_leaf=lambda x: x is None,
+        )
 
         # Compute gradient norm before clipping (for logging)
         grad_norm = optax.global_norm(grads)
 
         # Apply optimizer updates
-        params, static = eqx.partition(state.model, eqx.is_array)
         updates, new_opt_state = optimizer.update(grads, state.opt_state, params)
         new_params = optax.apply_updates(params, updates)
         new_model = eqx.combine(new_params, static)
@@ -224,7 +261,7 @@ def make_train_step(
             step=state.step + 1,
             model=new_model,
             opt_state=new_opt_state,
-            key=state.key,
+            key=new_key,
         )
 
         metrics = {
@@ -234,7 +271,7 @@ def make_train_step(
 
         return new_state, metrics
 
-    return train_step
+    return eqx.filter_jit(train_step) if use_jit else train_step
 
 
 # =============================================================================
@@ -249,7 +286,8 @@ def make_eval_step(cfg: dict[str, Any]) -> EvalStep:
     :return EvalStep: JIT-compiled eval_step function.
     """
 
-    @eqx.filter_jit
+    use_jit = cfg.get("jit", True)
+
     def eval_step(
         model: eqx.Module,
         input_ids: Int[Array, "batch seq"],
@@ -265,7 +303,7 @@ def make_eval_step(cfg: dict[str, Any]) -> EvalStep:
         logits, _ = forward_model(model, input_ids, deterministic=True)
         return cross_entropy_loss(logits, labels)
 
-    return eval_step
+    return eqx.filter_jit(eval_step) if use_jit else eval_step
 
 
 def run_validation(

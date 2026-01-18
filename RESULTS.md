@@ -2,15 +2,18 @@
 
 > [!IMPORTANT]
 > **Disclaimer**: This is a sanity check for JAX/PyTorch numerical parity, not a rigorous benchmark. Both models use identical hyperparameters with no per-architecture tuning.
+>
+> **Update**: The runs below predate fixes for dtype enforcement, true gradient accumulation, and RoPE buffer handling.
+> Re-run after these fixes for updated numbers.
 
 ## Setup
 
 - **Dataset**: enwik8 (character-level, ~95M bytes used)
 - **Sequence length**: 512 (chunk size 256 for Megalodon)
 - **Training steps**: 1200
-- **Effective batch size**: 16 (batch_size=1, grad_accum=16)
+- **Effective batch size**: 16 (batch_size=1, grad_accum=16; now true accumulation via scan)
 - **Learning rate**: 4e-4
-- **Precision**: bfloat16
+- **Precision**: bfloat16 (now enforced via trainable-parameter casting)
 - **Hardware**: NVIDIA GeForce RTX 5090
 
 ## Results
@@ -60,7 +63,8 @@ Both JAX implementations show ~8% higher final validation loss compared to PyTor
 | Megalodon | 11,277,696 | 11,277,696 | ✓     |
 | Llama     | 12,883,392 | 12,489,792 | ~     |
 
-JAX Llama includes 393K RoPE frequency buffers in the pytree (non-trainable). Trainable params: 12,490,176.
+JAX Llama previously included RoPE frequency buffers in the pytree. These are now excluded from
+trainable parameters and weight decay masks; recompute counts after re-running.
 
 ## Notes
 

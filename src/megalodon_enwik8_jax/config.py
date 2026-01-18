@@ -129,6 +129,12 @@ def validate_config(cfg: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(f"dtype must be 'bf16' or 'fp32' (no fp16), got '{dtype}'")
     cfg["dtype"] = dtype
 
+    # Llama baseline does not implement dropout; require zeroed values.
+    if model == "llama":
+        for key in ("dropout", "attention_dropout", "hidden_dropout"):
+            if cfg.get(key, 0.0) > 0.0:
+                raise ValueError(f"{key} must be 0.0 for Llama baseline.")
+
     # Megalodon-specific: chunk_size must divide seq_len
     if model == "megalodon":
         seq_len = cfg.get("seq_len", 512)

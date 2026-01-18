@@ -9,6 +9,7 @@ import numpy as np
 
 from megalodon_enwik8_jax.data import load_enwik8, sample_accum_batch, sample_batch
 from megalodon_enwik8_jax.models import build_model
+from megalodon_enwik8_jax.params import make_trainable_mask
 from megalodon_enwik8_jax.training import (
     build_optimizer,
     create_train_state,
@@ -33,14 +34,21 @@ class TestTrainingSmokeTest:
         # Build model and optimizer
         key, model_key = jax.random.split(key)
         model = build_model(test_config, model_key)
+        trainable_mask = make_trainable_mask(model)
         optimizer = build_optimizer(test_config)
 
         # Create training state
         key, state_key = jax.random.split(key)
-        state = create_train_state(model, optimizer, state_key, step=0)
+        state = create_train_state(
+            model,
+            optimizer,
+            state_key,
+            step=0,
+            trainable_mask=trainable_mask,
+        )
 
         # Create train step
-        train_step = make_train_step(test_config, optimizer)
+        train_step = make_train_step(test_config, optimizer, trainable_mask)
 
         # Run a few steps
         losses = []
@@ -73,11 +81,18 @@ class TestTrainingSmokeTest:
 
         key, model_key = jax.random.split(key)
         model = build_model(test_config, model_key)
+        trainable_mask = make_trainable_mask(model)
         optimizer = build_optimizer(test_config)
 
         key, state_key = jax.random.split(key)
-        state = create_train_state(model, optimizer, state_key, step=0)
-        train_step = make_train_step(test_config, optimizer)
+        state = create_train_state(
+            model,
+            optimizer,
+            state_key,
+            step=0,
+            trainable_mask=trainable_mask,
+        )
+        train_step = make_train_step(test_config, optimizer, trainable_mask)
 
         input_ids, labels = sample_accum_batch(
             rng,
@@ -103,11 +118,18 @@ class TestTrainingSmokeTest:
 
         key, model_key = jax.random.split(key)
         model = build_model(megalodon_config, model_key)
+        trainable_mask = make_trainable_mask(model)
         optimizer = build_optimizer(megalodon_config)
 
         key, state_key = jax.random.split(key)
-        state = create_train_state(model, optimizer, state_key, step=0)
-        train_step = make_train_step(megalodon_config, optimizer)
+        state = create_train_state(
+            model,
+            optimizer,
+            state_key,
+            step=0,
+            trainable_mask=trainable_mask,
+        )
+        train_step = make_train_step(megalodon_config, optimizer, trainable_mask)
 
         input_ids, labels = sample_accum_batch(
             rng,
@@ -183,11 +205,18 @@ class TestTrainState:
 
         key, model_key = jax.random.split(key)
         model = build_model(test_config, model_key)
+        trainable_mask = make_trainable_mask(model)
         optimizer = build_optimizer(test_config)
 
         key, state_key = jax.random.split(key)
-        state = create_train_state(model, optimizer, state_key, step=0)
-        train_step = make_train_step(test_config, optimizer)
+        state = create_train_state(
+            model,
+            optimizer,
+            state_key,
+            step=0,
+            trainable_mask=trainable_mask,
+        )
+        train_step = make_train_step(test_config, optimizer, trainable_mask)
 
         assert int(state.step) == 0
 

@@ -9,17 +9,17 @@ JAX/Equinox port of **[MEGALODON](https://arxiv.org/abs/2404.08801)** character-
 | **Megalodon** | 11.3M      | **1.57**        | 2.27 | ~3m   |
 | Llama         | 12.9M      | 1.66            | 2.39 | ~3.5m |
 
-See [RESULTS.md](RESULTS.md) for JAX vs PyTorch comparison.
+These numbers were produced before the dtype and accumulation fixes below. Re-run after updates
+for fresh comparisons. See [RESULTS.md](RESULTS.md) for JAX vs PyTorch comparison details.
 
 ## Installation
 
 ```bash
-# Clone with submodule (contains enwik8 data)
-git clone --recursive https://github.com/pszemraj/megalodon-enwik8-jax.git
+git clone https://github.com/pszemraj/megalodon-enwik8-jax.git
 cd megalodon-enwik8-jax
 
-# If you already cloned without --recursive:
-git submodule update --init
+# Download enwik8 into data/enwik8.gz
+python scripts/download_enwik8.py
 
 # Install JAX with GPU support (adjust for your CUDA version)
 # See: https://jax.readthedocs.io/en/latest/installation.html
@@ -40,12 +40,16 @@ pip install -e .
 
 ```bash
 XLA_PYTHON_CLIENT_PREALLOCATE=false python train.py --config configs/megalodon_multichunk_512.yaml
+# or via entrypoint
+XLA_PYTHON_CLIENT_PREALLOCATE=false train-megalodon --config configs/megalodon_multichunk_512.yaml
 ```
 
 ## Inference
 
 ```bash
 XLA_PYTHON_CLIENT_PREALLOCATE=false python inference.py --ckpt runs/megalodon/checkpoint_final.eqx --prompt "The "
+# or via entrypoint
+XLA_PYTHON_CLIENT_PREALLOCATE=false infer-megalodon --ckpt runs/megalodon/checkpoint_final.eqx --prompt "The "
 ```
 
 ## Project Structure
@@ -62,9 +66,11 @@ megalodon-enwik8-jax/
 │   ├── checkpoint.py     # Save/load
 │   └── config.py         # YAML config
 ├── configs/              # Training configs
-├── data/                 # Symlink to enwik8.gz (from submodule)
+├── data/                 # Downloaded enwik8.gz (run scripts/download_enwik8.py)
+├── scripts/
+│   └── download_enwik8.py
 ├── vendor/               # PyTorch reference (submodule)
-├── train.py
+├── train.py              # Thin wrapper for package CLI
 └── inference.py
 ```
 

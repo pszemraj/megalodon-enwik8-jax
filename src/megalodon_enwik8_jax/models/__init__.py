@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, Any
 import jax
 from jaxtyping import Array, Float, Int
 
+from ..config import get_dtype
+from ..params import cast_trainable
 from .llama import LlamaLM, build_llama, forward_llama
 from .megalodon import MEGALODON_JAX_AVAILABLE, build_megalodon, forward_megalodon
 
@@ -29,15 +31,20 @@ def build_model(cfg: dict[str, Any], key: jax.Array) -> LlamaLM | MegalodonForCa
     :return LlamaLM | MegalodonForCausalLM: Initialized model instance.
     """
     model_type = cfg.get("model", "llama").lower()
+    dtype = get_dtype(cfg)
+
     if model_type == "llama":
-        return build_llama(cfg, key)
+        model = build_llama(cfg, key)
     elif model_type == "megalodon":
         if not MEGALODON_JAX_AVAILABLE:
             raise ImportError(
                 "megalodon-jax required. Install with: pip install megalodon-jax==0.1.0"
             )
-        return build_megalodon(cfg, key)
-    raise ValueError(f"Unknown model type: {model_type}")
+        model = build_megalodon(cfg, key)
+    else:
+        raise ValueError(f"Unknown model type: {model_type}")
+
+    return cast_trainable(model, dtype)
 
 
 def forward_model(
