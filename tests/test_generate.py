@@ -7,8 +7,8 @@ from typing import Any
 import jax
 import jax.numpy as jnp
 
-from megalodon_enwik8_jax.generate import apply_min_p, apply_temperature, generate, sample_token
 from megalodon_enwik8_jax.models import build_model
+from megalodon_enwik8_jax.utils import apply_min_p, apply_temperature, generate, sample_token
 
 
 class TestGenerate:

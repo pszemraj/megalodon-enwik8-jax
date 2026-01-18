@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from megalodon_enwik8_jax.data import (
+from megalodon_enwik8_jax.utils import (
     decode_tokens,
     encode_prompt,
     load_enwik8,

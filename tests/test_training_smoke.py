@@ -7,14 +7,16 @@ from typing import Any
 import jax
 import numpy as np
 
-from megalodon_enwik8_jax.data import load_enwik8, sample_accum_batch, sample_batch
 from megalodon_enwik8_jax.models import build_model
-from megalodon_enwik8_jax.params import make_trainable_mask
-from megalodon_enwik8_jax.training import (
+from megalodon_enwik8_jax.utils import (
     build_optimizer,
     create_train_state,
+    load_enwik8,
     make_eval_step,
     make_train_step,
+    make_trainable_mask,
+    sample_accum_batch,
+    sample_batch,
 )
 
 

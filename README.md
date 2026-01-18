@@ -55,11 +55,7 @@ megalodon-enwik8-jax/
 │   ├── models/
 │   │   ├── megalodon.py  # MegalodonLM (wraps megalodon-jax)
 │   │   └── llama.py      # Llama baseline
-│   ├── training.py       # TrainState, optimizer, train step
-│   ├── generate.py       # Text generation
-│   ├── data.py           # enwik8 loading
-│   ├── checkpoint.py     # Save/load
-│   └── config.py         # YAML config
+│   └── utils.py          # Data, sampling, training, checkpoints, config
 ├── configs/              # Training configs
 ├── data/                 # enwik8.gz (tracked in this repo)
 ├── vendor/               # PyTorch reference (submodule)

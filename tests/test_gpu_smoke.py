@@ -7,10 +7,14 @@ from typing import Any
 import jax
 import pytest
 
-from megalodon_enwik8_jax.generate import generate
 from megalodon_enwik8_jax.models import build_model, forward_model
-from megalodon_enwik8_jax.params import make_trainable_mask
-from megalodon_enwik8_jax.training import build_optimizer, create_train_state, make_train_step
+from megalodon_enwik8_jax.utils import (
+    build_optimizer,
+    create_train_state,
+    generate,
+    make_train_step,
+    make_trainable_mask,
+)
 
 
 def _tiny_config() -> dict[str, Any]:

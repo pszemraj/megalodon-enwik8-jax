@@ -11,18 +11,22 @@ from typing import Any
 
 import jax
 
-from megalodon_enwik8_jax.checkpoint import load_checkpoint, load_config_from_checkpoint
-from megalodon_enwik8_jax.config import get_dtype, validate_config
-from megalodon_enwik8_jax.data import decode_tokens, encode_prompt
-from megalodon_enwik8_jax.generate import generate
 from megalodon_enwik8_jax.models import build_model
-from megalodon_enwik8_jax.params import (
+from megalodon_enwik8_jax.utils import (
+    TrainState,
     assert_trainable_dtype,
+    build_optimizer,
     cast_trainable,
     count_trainable_params,
+    decode_tokens,
+    encode_prompt,
+    generate,
+    get_dtype,
+    load_checkpoint,
+    load_config_from_checkpoint,
     make_trainable_mask,
+    validate_config,
 )
-from megalodon_enwik8_jax.training import TrainState, build_optimizer
 
 
 def _count_params(model: object, trainable_mask: Any) -> int:

@@ -8,7 +8,7 @@ import jax
 import jax.numpy as jnp
 
 from megalodon_enwik8_jax.models import build_model, forward_model
-from megalodon_enwik8_jax.params import count_trainable_params, make_trainable_mask
+from megalodon_enwik8_jax.utils import count_trainable_params, make_trainable_mask
 
 
 def count_params(model: object) -> int:
