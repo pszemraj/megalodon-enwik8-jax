@@ -36,6 +36,40 @@ def _linear_3d(
     return y.astype(compute_dtype)
 
 
+def _init_linear(linear: eqx.nn.Linear, key: jax.Array) -> eqx.nn.Linear:
+    """Match PyTorch nn.Linear default init (kaiming_uniform with a=sqrt(5))."""
+    key_w, key_b = jax.random.split(key)
+    fan_in = linear.weight.shape[1]
+    bound = jnp.asarray(1.0 / jnp.sqrt(fan_in), dtype=linear.weight.dtype)
+    weight = jax.random.uniform(
+        key_w,
+        linear.weight.shape,
+        minval=-bound,
+        maxval=bound,
+        dtype=linear.weight.dtype,
+    )
+    if linear.bias is None:
+        return eqx.tree_at(lambda layer: layer.weight, linear, weight)
+    bias = jax.random.uniform(
+        key_b,
+        linear.bias.shape,
+        minval=-bound,
+        maxval=bound,
+        dtype=linear.bias.dtype,
+    )
+    return eqx.tree_at(lambda layer: (layer.weight, layer.bias), linear, (weight, bias))
+
+
+def _init_linear_normal(
+    linear: eqx.nn.Linear,
+    key: jax.Array,
+    std: float,
+) -> eqx.nn.Linear:
+    """Initialize linear weights with N(0, std) like PyTorch Llama to_logits."""
+    weight = jax.random.normal(key, linear.weight.shape, dtype=linear.weight.dtype) * std
+    return eqx.tree_at(lambda layer: layer.weight, linear, weight)
+
+
 @dataclass(frozen=True)
 class LlamaConfig:
     """Configuration for Llama model."""
@@ -212,6 +246,10 @@ class CausalSelfAttention(eqx.Module):
         self.wk = eqx.nn.Linear(dim, inner_dim, use_bias=False, key=keys[1])
         self.wv = eqx.nn.Linear(dim, inner_dim, use_bias=False, key=keys[2])
         self.wo = eqx.nn.Linear(inner_dim, dim, use_bias=False, key=keys[3])
+        self.wq = _init_linear(self.wq, keys[0])
+        self.wk = _init_linear(self.wk, keys[1])
+        self.wv = _init_linear(self.wv, keys[2])
+        self.wo = _init_linear(self.wo, keys[3])
 
         # Precompute rotary embeddings
         self.cos, self.sin = precompute_freqs_cis(head_dim, max_seq_len, rope_theta)
@@ -314,6 +352,9 @@ class SwiGLU(eqx.Module):
         self.w1 = eqx.nn.Linear(dim, hidden_dim, use_bias=False, key=keys[0])
         self.w2 = eqx.nn.Linear(hidden_dim, dim, use_bias=False, key=keys[1])
         self.w3 = eqx.nn.Linear(dim, hidden_dim, use_bias=False, key=keys[2])
+        self.w1 = _init_linear(self.w1, keys[0])
+        self.w2 = _init_linear(self.w2, keys[1])
+        self.w3 = _init_linear(self.w3, keys[2])
         self.compute_dtype = compute_dtype
 
     def __call__(self, x: Array) -> Array:
@@ -462,9 +503,8 @@ class LlamaLM(eqx.Module):
         if config.tied_embedding:
             self.lm_head = None
         else:
-            self.lm_head = eqx.nn.Linear(
-                config.dim, config.vocab_size, use_bias=False, key=keys[-1]
-            )
+            lm_head = eqx.nn.Linear(config.dim, config.vocab_size, use_bias=False, key=keys[-1])
+            self.lm_head = _init_linear_normal(lm_head, keys[-1], config.embed_init_std)
 
     def __call__(
         self,
