@@ -47,8 +47,8 @@ seq_len: 512
 
 # Evaluation/generation
 save_every: 500
-validate_every: 100
-val_batches: 10
+validate_every: 150
+val_batches: 100
 generate_every: 100
 generate_prompt_len: 384
 generate_length: 128
