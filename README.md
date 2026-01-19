@@ -77,3 +77,6 @@ pytest tests/ -v
 ## License
 
 Apache-2.0
+
+Note: Llama checkpoints saved before excluding RoPE cos/sin buffers from the trainable
+mask are not compatible with the current optimizer state layout.
