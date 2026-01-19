@@ -243,6 +243,16 @@ def main() -> None:
             ckpt_path = save_checkpoint(run_dir, state, cfg)
             tqdm.write(f"Saved checkpoint: {ckpt_path}")
 
+    # Final validation (always record end-of-run metric)
+    final_step = int(state.step)
+    val_loss = run_validation(state.model, eval_step, val_data, np_rng, cfg)
+    val_bpc = bpc_from_loss(val_loss)
+    _log_metrics(
+        metrics_path,
+        {"step": final_step, "val_loss": float(val_loss), "val_bpc": float(val_bpc)},
+    )
+    print(f"\nStep {final_step} | Val loss: {val_loss:.4f} | Val BPC: {val_bpc:.4f}")
+
     # Final checkpoint
     ckpt_path = save_checkpoint(run_dir, state, cfg, tag="final")
     print(f"\nTraining complete! Final checkpoint: {ckpt_path}")

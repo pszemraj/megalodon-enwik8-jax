@@ -4,12 +4,14 @@ JAX/Equinox port of **[MEGALODON](https://arxiv.org/abs/2404.08801)** character-
 
 ## Results
 
-| Model         | Parameters | Val Loss @ 1100 | BPC  | Time  |
+| Model         | Parameters | Val Loss @ 1500 | BPC  | Time  |
 | ------------- | ---------- | --------------- | ---- | ----- |
-| **Megalodon** | 11.28M     | 1.62            | 2.34 | ~3.4m |
-| Llama         | 12.49M     | **1.61**        | 2.32 | ~4.0m |
+| **Megalodon** | 11.28M     | **1.47**        | 2.12 | ~4.4m |
+| Llama         | 12.49M     | 1.48            | 2.13 | ~3.7m |
 
 See [RESULTS.md](RESULTS.md) for JAX vs PyTorch comparison details.
+
+Stability run details: 1500 steps, validation every 150 steps with `val_batches=100` (configs default to 1200).
 
 ## Installation
 
