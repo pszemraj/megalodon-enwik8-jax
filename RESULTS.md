@@ -1,38 +1,40 @@
-# 1500-Step BF16 Autocast Results
+# 1200-Step BF16 Autocast Results
 
 ## Setup
 
 - **Dataset**: enwik8 (character-level, ~95M bytes used)
 - **Sequence length**: 512 (chunk size 256 for Megalodon)
-- **Training steps**: 1500
+- **Training steps**: 1200
 - **Effective batch size**: 16 (batch_size=1, grad_accum=16)
-- **Validation cadence**: every 150 steps, `val_batches=100`
+- **Validation cadence**: every 100 steps, `val_batches=100`
 - **Precision**: bf16 autocast (megalodon-jax v0.1.1 precision policy; Llama AMP-style compute)
 - **Hardware**: NVIDIA GeForce RTX 5090
 - **XLA_FLAGS**: `--xla_gpu_enable_triton_gemm=false`
 
 ## Results (bf16 autocast)
 
-| Model         | Parameters | Val Loss @ 1500 | BPC  | Time  |
+| Model         | Parameters | Val Loss @ 1200 | BPC  | Time  |
 | ------------- | ---------- | --------------- | ---- | ----- |
-| **Megalodon** | 11.28M     | 1.43            | 2.07 | ~3.9m |
-| Llama         | 12.49M     | 1.48            | 2.13 | ~3.5m |
+| **Megalodon** | 11.28M     | 1.49            | 2.15 | ~3.2m |
+| Llama         | 12.49M     | 1.53            | 2.21 | ~3.1m |
 
-## Validation Curve (1500-step run)
+## Validation Curve (1200-step run)
 
 | Step | Megalodon | Llama |
 | ---- | --------- | ----- |
 | 0    | 17.833    | 5.679 |
-| 150  | 1.961     | 2.295 |
-| 300  | 1.729     | 1.899 |
-| 450  | 1.621     | 1.726 |
-| 600  | 1.605     | 1.697 |
-| 750  | 1.544     | 1.615 |
-| 900  | 1.509     | 1.555 |
-| 1050 | 1.537     | 1.597 |
-| 1200 | 1.484     | 1.533 |
-| 1350 | 1.439     | 1.485 |
-| 1500 | 1.433     | 1.477 |
+| 100  | 2.100     | 2.537 |
+| 200  | 1.862     | 2.147 |
+| 300  | 1.737     | 1.916 |
+| 400  | 1.675     | 1.806 |
+| 500  | 1.608     | 1.700 |
+| 600  | 1.567     | 1.646 |
+| 700  | 1.499     | 1.564 |
+| 800  | 1.488     | 1.547 |
+| 900  | 1.517     | 1.575 |
+| 1000 | 1.444     | 1.503 |
+| 1100 | 1.444     | 1.508 |
+| 1200 | 1.492     | 1.532 |
 
 ## Reproduction
 

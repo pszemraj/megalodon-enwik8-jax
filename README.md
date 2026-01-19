@@ -4,12 +4,12 @@ JAX/Equinox port of **[MEGALODON](https://arxiv.org/abs/2404.08801)** character-
 
 ## Results
 
-| Model         | Parameters | Val Loss @ 1500 | BPC  | Time  |
+| Model         | Parameters | Val Loss @ 1200 | BPC  | Time  |
 | ------------- | ---------- | --------------- | ---- | ----- |
-| **Megalodon** | 11.28M     | **1.43**        | 2.07 | ~3.9m |
-| Llama         | 12.49M     | 1.48            | 2.13 | ~3.5m |
+| **Megalodon** | 11.28M     | **1.49**        | 2.15 | ~3.2m |
+| Llama         | 12.49M     | 1.53            | 2.21 | ~3.1m |
 
-1500 steps, validation every 150 steps with `val_batches=100` (defaults in configs). See
+1200 steps, validation every 100 steps with `val_batches=100` (defaults in configs). See
 [RESULTS.md](RESULTS.md) for the validation curve table.
 
 ## Installation
