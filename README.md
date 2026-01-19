@@ -58,7 +58,6 @@ megalodon-enwik8-jax/
 │   └── utils.py          # Data, sampling, training, checkpoints, config
 ├── configs/              # Training configs
 ├── data/                 # enwik8.gz (tracked in this repo)
-├── vendor/               # PyTorch reference (submodule)
 ├── train.py              # Training script
 └── inference.py
 ```

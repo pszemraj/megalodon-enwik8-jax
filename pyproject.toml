@@ -48,7 +48,6 @@ packages = ["src/megalodon_enwik8_jax"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-exclude = ["vendor"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
