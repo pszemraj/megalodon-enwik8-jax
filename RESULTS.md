@@ -7,7 +7,7 @@
 
 - **Dataset**: enwik8 (character-level, ~95M bytes used)
 - **Sequence length**: 512 (chunk size 256 for Megalodon)
-- **Training steps**: 1500 (stability run; base configs default to 1200)
+- **Training steps**: 1500 (defaults in configs)
 - **Effective batch size**: 16 (batch_size=1, grad_accum=16; now true accumulation via scan)
 - **Validation cadence**: every 150 steps, `val_batches=100`
 - **Learning rate**: 4e-4
@@ -106,4 +106,4 @@ XLA_PYTHON_CLIENT_PREALLOCATE=false XLA_FLAGS=--xla_gpu_enable_triton_gemm=false
   python train.py --config configs/llama_512.yaml
 ```
 
-To reproduce the 1500-step stability run above, set `num_batches: 1500` in the config (or a local copy).
+The 1500-step stability run uses the default configs as-is.

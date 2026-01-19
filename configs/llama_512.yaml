@@ -17,7 +17,7 @@ dtype: bf16
 jit: true
 
 # Training schedule - IDENTICAL to Megalodon
-num_batches: 1200
+num_batches: 1500
 batch_size: 1
 grad_accum_every: 16
 learning_rate: 0.0004

@@ -11,7 +11,7 @@ JAX/Equinox port of **[MEGALODON](https://arxiv.org/abs/2404.08801)** character-
 
 See [RESULTS.md](RESULTS.md) for JAX vs PyTorch comparison details.
 
-Stability run details: 1500 steps, validation every 150 steps with `val_batches=100` (configs default to 1200).
+Stability run details: 1500 steps, validation every 150 steps with `val_batches=100` (defaults in configs).
 
 ## Installation
 

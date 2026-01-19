@@ -34,7 +34,7 @@ dtype: bf16  # bf16 required for Megalodon (fp16 overflows)
 jit: true
 
 # Training schedule
-num_batches: 1200
+num_batches: 1500
 batch_size: 1
 grad_accum_every: 16
 learning_rate: 0.0004
