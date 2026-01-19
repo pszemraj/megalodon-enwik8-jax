@@ -35,6 +35,11 @@ KNOWN_KEYS = frozenset(
         # Model - shared
         "num_tokens",
         "dtype",
+        "param_dtype",
+        "compute_dtype",
+        "accum_dtype",
+        "softmax_dtype",
+        "gemm_backend",
         "jit",
         # Llama-specific
         "dim",
@@ -118,11 +123,38 @@ def validate_config(cfg: dict[str, Any]) -> dict[str, Any]:
     if num_tokens != 256:
         raise ValueError(f"num_tokens must be 256 for enwik8 (bytes), got {num_tokens}")
 
-    # Validate dtype
+    # Validate dtype (legacy shared flag)
     dtype = cfg.get("dtype", "bf16").lower()
     if dtype not in {"bf16", "fp32"}:
         raise ValueError(f"dtype must be 'bf16' or 'fp32' (no fp16), got '{dtype}'")
     cfg["dtype"] = dtype
+
+    # Validate optional precision policy fields for Megalodon v0.1.1+
+    precision_keys = ("param_dtype", "compute_dtype", "accum_dtype", "softmax_dtype")
+    for key in precision_keys:
+        if key not in cfg:
+            continue
+        value = cfg[key]
+        if value is None:
+            continue
+        if isinstance(value, str):
+            val = value.lower()
+            if val in {"bf16", "bfloat16"}:
+                cfg[key] = "bf16"
+            elif val in {"fp32", "float32"}:
+                cfg[key] = "fp32"
+            elif val in {"fp16", "float16"}:
+                raise ValueError(f"{key} must be bf16/fp32 (no fp16), got '{value}'")
+            else:
+                raise ValueError(f"{key} must be bf16/fp32, got '{value}'")
+        elif isinstance(value, (jnp.dtype, np.dtype)) or value in {jnp.bfloat16, jnp.float32}:
+            continue
+        else:
+            raise ValueError(f"{key} must be bf16/fp32 or a JAX dtype, got '{value}'")
+
+    gemm_backend = cfg.get("gemm_backend")
+    if gemm_backend is not None and gemm_backend != "default":
+        raise ValueError("gemm_backend must be 'default' for now.")
 
     # Llama baseline does not implement dropout; require zeroed values.
     if model == "llama":
@@ -174,8 +206,15 @@ def resolve_run_dir(cfg: dict[str, Any], override: str | None = None) -> Path:
 
 def get_dtype(cfg: dict[str, Any]) -> DTypeLike:
     """Get JAX dtype from config."""
-    dtype_str = cfg.get("dtype", "bf16").lower()
-    return jnp.bfloat16 if dtype_str == "bf16" else jnp.float32
+    dtype_value = cfg.get("compute_dtype", cfg.get("dtype", "bf16"))
+    if isinstance(dtype_value, str):
+        dtype_str = dtype_value.lower()
+        return jnp.bfloat16 if dtype_str in {"bf16", "bfloat16"} else jnp.float32
+    if isinstance(dtype_value, (jnp.dtype, np.dtype)):
+        return jnp.dtype(dtype_value)
+    if dtype_value in {jnp.bfloat16, jnp.float32}:
+        return jnp.dtype(dtype_value)
+    raise ValueError(f"compute_dtype must be bf16/fp32 or a JAX dtype, got '{dtype_value}'")
 
 
 # =============================================================================

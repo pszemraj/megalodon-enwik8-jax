@@ -36,6 +36,23 @@ def _linear_3d(
     return y.astype(compute_dtype)
 
 
+def _resolve_compute_dtype(cfg: dict[str, Any]) -> jnp.dtype:
+    """Resolve compute dtype from config values."""
+    value = cfg.get("compute_dtype", cfg.get("dtype", "bf16"))
+    if isinstance(value, str):
+        val = value.lower()
+        if val in {"bf16", "bfloat16"}:
+            return jnp.bfloat16
+        if val in {"fp32", "float32"}:
+            return jnp.float32
+        raise ValueError(f"compute_dtype must be bf16/fp32, got '{value}'")
+    if isinstance(value, jnp.dtype):
+        return value
+    if value in {jnp.bfloat16, jnp.float32}:
+        return jnp.dtype(value)
+    raise ValueError(f"compute_dtype must be bf16/fp32 or a JAX dtype, got '{value}'")
+
+
 def _init_linear(linear: eqx.nn.Linear, key: jax.Array) -> eqx.nn.Linear:
     """Match PyTorch nn.Linear default init (kaiming_uniform with a=sqrt(5))."""
     key_w, key_b = jax.random.split(key)
@@ -579,7 +596,7 @@ def build_llama(cfg: dict[str, Any], key: jax.Array) -> LlamaLM:
         rope_theta=cfg.get("rope_theta", 10000.0),
         norm_eps=cfg.get("norm_eps", 1e-5),
         tied_embedding=cfg.get("tied_embedding", True),
-        compute_dtype=(jnp.bfloat16 if cfg.get("dtype", "bf16").lower() == "bf16" else jnp.float32),
+        compute_dtype=_resolve_compute_dtype(cfg),
     )
     return LlamaLM(config, key=key)
 

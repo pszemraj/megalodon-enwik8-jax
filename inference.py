@@ -10,18 +10,16 @@ import argparse
 from typing import Any
 
 import jax
+import jax.numpy as jnp
 
 from megalodon_enwik8_jax.models import build_model
 from megalodon_enwik8_jax.utils import (
-    TrainState,
     assert_trainable_dtype,
     build_optimizer,
-    cast_trainable,
     count_trainable_params,
     decode_tokens,
     encode_prompt,
     generate,
-    get_dtype,
     load_checkpoint,
     load_config_from_checkpoint,
     make_trainable_mask,
@@ -112,15 +110,9 @@ def main() -> None:
         model_builder=build_model,
         optimizer=optimizer,
     )
-    dtype = get_dtype(cfg)
     trainable_mask = make_trainable_mask(state.model)
-    state = TrainState(
-        step=state.step,
-        model=cast_trainable(state.model, dtype, trainable_mask),
-        opt_state=state.opt_state,
-        key=state.key,
-    )
-    assert_trainable_dtype(state.model, dtype, trainable_mask)
+    if cfg["model"] == "llama":
+        assert_trainable_dtype(state.model, jnp.float32, trainable_mask)
 
     n_params = _count_params(state.model, trainable_mask)
     print(f"Parameters: {_format_params(n_params)} ({n_params:,})")

@@ -34,7 +34,7 @@ def build_model(cfg: dict[str, Any], key: jax.Array) -> LlamaLM | MegalodonForCa
     elif model_type == "megalodon":
         if not MEGALODON_JAX_AVAILABLE:
             raise ImportError(
-                "megalodon-jax required. Install with: pip install megalodon-jax==0.1.0"
+                "megalodon-jax required. Install with: pip install megalodon-jax==0.1.1"
             )
         model = build_megalodon(cfg, key)
     else:

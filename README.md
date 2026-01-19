@@ -6,8 +6,8 @@ JAX/Equinox port of **[MEGALODON](https://arxiv.org/abs/2404.08801)** character-
 
 | Model         | Parameters | Val Loss @ 1500 | BPC  | Time  |
 | ------------- | ---------- | --------------- | ---- | ----- |
-| **Megalodon** | 11.28M     | **1.47**        | 2.12 | ~4.4m |
-| Llama         | 12.49M     | 1.48            | 2.13 | ~3.7m |
+| **Megalodon** | 11.28M     | **1.43**        | 2.07 | ~3.9m |
+| Llama         | 12.49M     | 1.48            | 2.13 | ~3.5m |
 
 See [RESULTS.md](RESULTS.md) for JAX vs PyTorch comparison details.
 

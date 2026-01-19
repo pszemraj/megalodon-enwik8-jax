@@ -11,7 +11,7 @@
 - **Effective batch size**: 16 (batch_size=1, grad_accum=16; now true accumulation via scan)
 - **Validation cadence**: every 150 steps, `val_batches=100`
 - **Learning rate**: 4e-4
-- **Precision**: bfloat16 baseline (Megalodon casts params with fp32-sensitive mask; Llama uses AMP-style bf16 compute), fp32 comparison below
+- **Precision**: bfloat16 compute with fp32 master weights (Megalodon precision policy in megalodon-jax v0.1.1; Llama uses AMP-style bf16 compute), fp32 comparison below
 - **Hardware**: NVIDIA GeForce RTX 5090
 - **XLA_FLAGS**: `--xla_gpu_enable_triton_gemm=false`
 
@@ -21,8 +21,8 @@
 
 | Model         | Parameters | Val Loss @ 1500 | BPC  | Time  |
 | ------------- | ---------- | --------------- | ---- | ----- |
-| **Megalodon** | 11.28M     | 1.47            | 2.12 | ~4.4m |
-| Llama         | 12.49M     | 1.48            | 2.13 | ~3.7m |
+| **Megalodon** | 11.28M     | 1.43            | 2.07 | ~3.9m |
+| Llama         | 12.49M     | 1.48            | 2.13 | ~3.5m |
 
 ### PyTorch Reference
 
@@ -35,7 +35,7 @@
 
 | Architecture | JAX Loss @ 1500 | PyTorch Loss @ 1100 | Δ Loss | Δ %   |
 | ------------ | --------------- | ------------------- | ------ | ----- |
-| Megalodon    | 1.47            | 1.45                | +0.02  | +1.1% |
+| Megalodon    | 1.43            | 1.45                | -0.02  | -1.2% |
 | Llama        | 1.48            | 1.54                | -0.06  | -4.2% |
 
 These are not step-matched; JAX values are from the 1500-step stability run, while PyTorch is the
@@ -46,21 +46,24 @@ These are not step-matched; JAX values are from the 1500-step stability run, whi
 
 | Step | JAX Megalodon | JAX Llama |
 | ---- | ------------- | --------- |
-| 0    | 17.832*       | 5.679     |
-| 150  | 2.015         | 2.295     |
-| 300  | 1.794         | 1.903     |
-| 450  | 1.680         | 1.727     |
-| 600  | 1.661         | 1.696     |
-| 750  | 1.600         | 1.616     |
-| 900  | 1.546         | 1.555     |
-| 1050 | 1.581         | 1.597     |
-| 1200 | 1.520         | 1.532     |
-| 1350 | 1.473         | 1.481     |
-| 1500 | 1.466         | 1.476     |
+| 0    | 17.833*       | 5.679     |
+| 150  | 1.961         | 2.295     |
+| 300  | 1.729         | 1.899     |
+| 450  | 1.621         | 1.726     |
+| 600  | 1.605         | 1.697     |
+| 750  | 1.544         | 1.615     |
+| 900  | 1.509         | 1.555     |
+| 1050 | 1.537         | 1.597     |
+| 1200 | 1.484         | 1.533     |
+| 1350 | 1.439         | 1.485     |
+| 1500 | 1.433         | 1.477     |
 
 *High initial loss due to megalodon-jax He initialization vs PyTorch scaled init.
 
 ## Precision Comparison (JAX)
+
+Note: these precision comparisons were run prior to the megalodon-jax v0.1.1 migration and
+should be refreshed for the new precision policy.
 
 Llama (bf16 AMP vs fp32):
 
@@ -89,8 +92,8 @@ JAX Llama excludes RoPE frequency buffers from trainable parameter counts and we
 
 ## Notes
 
-- **Megalodon vs Llama**: In the 1500-step stability run, Megalodon is marginally lower at the end.
-- **JAX is faster**: ~4.4m vs ~8m for Megalodon at 1500 steps (JAX benefits from XLA fusion)
+- **Megalodon vs Llama**: In the 1500-step stability run, Megalodon is lower at the end.
+- **JAX is faster**: ~3.9m vs ~8m for Megalodon at 1500 steps (JAX benefits from XLA fusion)
 - **Generation**: Uses megalodon-jax library's `jax.lax.scan`-based generate() for efficient autoregressive decoding
 - **Late-training variance**: With `val_batches=100`, both JAX models continue trending down through 1500 with mild oscillation around ~1.5–1.6
 
