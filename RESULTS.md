@@ -10,13 +10,13 @@
 - **Training steps**: 1200
 - **Effective batch size**: 16 (batch_size=1, grad_accum=16; now true accumulation via scan)
 - **Learning rate**: 4e-4
-- **Precision**: bfloat16 (now enforced via trainable-parameter casting)
+- **Precision**: bfloat16 baseline (Megalodon casts params with fp32-sensitive mask; Llama uses AMP-style bf16 compute), fp32 comparison below
 - **Hardware**: NVIDIA GeForce RTX 5090
 - **XLA_FLAGS**: `--xla_gpu_enable_triton_gemm=false`
 
 ## Results
 
-### JAX (this repo)
+### JAX (this repo, bf16 baseline)
 
 | Model         | Parameters | Val Loss @ 1100 | BPC  | Time  |
 | ------------- | ---------- | --------------- | ---- | ----- |
@@ -55,6 +55,24 @@ to 1.45 later, suggesting similar modeling capacity with different optimization 
 | 1100 | 1.62          | 1.45              | 1.61      | 1.54          |
 
 *High initial loss due to megalodon-jax He initialization vs PyTorch scaled init.
+
+## Precision Comparison (JAX)
+
+Llama (bf16 AMP vs fp32):
+
+| Run | 0 | 100 | 200 | 400 | 600 | 800 | 1000 | 1100 |
+| --- | --- | --- | --- | --- | --- | --- | ---- | ---- |
+| bf16 AMP (torch-init) | 5.6643 | 2.4985 | 2.1428 | 1.8171 | 1.7096 | 1.3758 | 1.6065 | 1.6143 |
+| fp32 (torch-init) | 5.6649 | 2.4984 | 2.1431 | 1.8293 | 1.7094 | 1.3747 | 1.6060 | 1.6207 |
+
+Megalodon (bf16 masked vs fp32):
+
+| Run | 0 | 100 | 200 | 400 | 600 | 800 | 1000 | 1100 |
+| --- | --- | --- | --- | --- | --- | --- | ---- | ---- |
+| bf16 masked params | 17.9235 | 2.1944 | 1.9211 | 1.7774 | 1.7061 | 1.3991 | 1.6226 | 1.6229 |
+| fp32 | 17.9270 | 2.1509 | 1.8538 | 1.7313 | 1.6460 | 1.3448 | 1.5696 | 1.5730 |
+
+AMP here means fp32 parameters with bf16 compute; Megalodon keeps CEMA/norms/gamma-beta in fp32.
 
 ## Parameter Counts
 
