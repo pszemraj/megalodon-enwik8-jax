@@ -4,22 +4,21 @@ JAX/Equinox port of **[MEGALODON](https://arxiv.org/abs/2404.08801)** character-
 
 ## Results
 
-| Model         | Parameters | Val Loss @ 1100 | BPC  | Time  |
+| Model         | Parameters | Val Loss @ 1200 | BPC  | Time  |
 | ------------- | ---------- | --------------- | ---- | ----- |
-| **Megalodon** | 11.3M      | **1.57**        | 2.27 | ~3m   |
-| Llama         | 12.9M      | 1.66            | 2.39 | ~3.5m |
+| **Megalodon** | 11.28M     | **1.49**        | 2.15 | ~3.2m |
+| Llama         | 12.49M     | 1.53            | 2.21 | ~3.1m |
 
-See [RESULTS.md](RESULTS.md) for JAX vs PyTorch comparison.
+1200 steps, validation every 100 steps with `val_batches=100` (defaults in configs). See
+[RESULTS.md](RESULTS.md) for the validation curve table.
 
 ## Installation
 
 ```bash
-# Clone with submodule (contains enwik8 data)
-git clone --recursive https://github.com/pszemraj/megalodon-enwik8-jax.git
+git clone https://github.com/pszemraj/megalodon-enwik8-jax.git
 cd megalodon-enwik8-jax
 
-# If you already cloned without --recursive:
-git submodule update --init
+# Dataset is already included in data/enwik8.gz
 
 # Install JAX with GPU support (adjust for your CUDA version)
 # See: https://jax.readthedocs.io/en/latest/installation.html
@@ -56,15 +55,10 @@ megalodon-enwik8-jax/
 │   ├── models/
 │   │   ├── megalodon.py  # MegalodonLM (wraps megalodon-jax)
 │   │   └── llama.py      # Llama baseline
-│   ├── training.py       # TrainState, optimizer, train step
-│   ├── generate.py       # Text generation
-│   ├── data.py           # enwik8 loading
-│   ├── checkpoint.py     # Save/load
-│   └── config.py         # YAML config
+│   └── utils.py          # Data, sampling, training, checkpoints, config
 ├── configs/              # Training configs
-├── data/                 # Symlink to enwik8.gz (from submodule)
-├── vendor/               # PyTorch reference (submodule)
-├── train.py
+├── data/                 # enwik8.gz (tracked in this repo)
+├── train.py              # Training script
 └── inference.py
 ```
 
@@ -83,3 +77,6 @@ pytest tests/ -v
 ## License
 
 Apache-2.0
+
+Note: Llama checkpoints saved before excluding RoPE cos/sin buffers from the trainable
+mask are not compatible with the current optimizer state layout.

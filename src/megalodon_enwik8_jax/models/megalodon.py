@@ -1,6 +1,6 @@
 """Megalodon wrapper using megalodon-jax package.
 
-Thin wrapper around megalodon-jax==0.1.0 for unified training interface.
+Thin wrapper around megalodon-jax==0.1.1 for unified training interface.
 Megalodon uses complex-valued EMA for O(n) sequence modeling with
 chunk-based attention.
 
@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 import jax
+import jax.numpy as jnp
 from jaxtyping import Array, Float, Int
 
 # Import from megalodon-jax
@@ -36,17 +37,14 @@ def assert_megalodon_available() -> None:
     """
     if not MEGALODON_JAX_AVAILABLE:
         raise ImportError(
-            "megalodon-jax is not installed. Install with: pip install megalodon-jax==0.1.0"
+            "megalodon-jax is not installed. Install with: pip install megalodon-jax==0.1.1"
         )
 
 
 def assert_megalodon_version() -> None:
     """Assert megalodon-jax is the expected version.
 
-    The plan specifies exact pin to 0.1.0 for reproducibility.
-
-    Note: megalodon-jax doesn't expose __version__, so we just
-    check that it's importable and has the expected API.
+    v0.1.1 introduces explicit precision policy fields in MegalodonConfig.
     """
     assert_megalodon_available()
 
@@ -58,8 +56,33 @@ def assert_megalodon_version() -> None:
         if not hasattr(megalodon_jax, attr):
             raise ImportError(
                 f"megalodon-jax is missing expected attribute '{attr}'. "
-                "Please install megalodon-jax==0.1.0"
+                "Please install megalodon-jax==0.1.1"
             )
+    if not hasattr(MegalodonConfig, "__dataclass_fields__") or (
+        "param_dtype" not in MegalodonConfig.__dataclass_fields__
+    ):
+        raise ImportError(
+            "megalodon-jax>=0.1.1 required (missing precision policy fields). "
+            "Please install megalodon-jax==0.1.1"
+        )
+
+
+def _resolve_dtype(value: Any, default: jnp.dtype) -> jnp.dtype:
+    """Resolve a JAX dtype from config values."""
+    if value is None:
+        return default
+    if isinstance(value, str):
+        val = value.lower()
+        if val in {"bf16", "bfloat16"}:
+            return jnp.bfloat16
+        if val in {"fp32", "float32"}:
+            return jnp.float32
+        raise ValueError(f"Precision policy dtype must be bf16/fp32, got '{value}'")
+    if isinstance(value, jnp.dtype):
+        return value
+    if value in {jnp.bfloat16, jnp.float32}:
+        return jnp.dtype(value)
+    raise ValueError(f"Precision policy dtype must be bf16/fp32, got '{value}'")
 
 
 def build_megalodon(cfg: dict[str, Any], key: jax.Array) -> MegalodonForCausalLM:
@@ -87,6 +110,14 @@ def build_megalodon(cfg: dict[str, Any], key: jax.Array) -> MegalodonForCausalLM
             "or divisible by it for Megalodon."
         )
 
+    # Resolve precision policy
+    compute_default = _resolve_dtype(cfg.get("dtype"), jnp.bfloat16)
+    compute_dtype = _resolve_dtype(cfg.get("compute_dtype"), compute_default)
+    param_dtype = _resolve_dtype(cfg.get("param_dtype"), jnp.float32)
+    accum_dtype = _resolve_dtype(cfg.get("accum_dtype"), jnp.float32)
+    softmax_dtype = _resolve_dtype(cfg.get("softmax_dtype"), jnp.float32)
+    gemm_backend = cfg.get("gemm_backend", "default")
+
     # Build config with mapped parameters
     config = MegalodonConfig(
         vocab_size=cfg.get("num_tokens", 256),
@@ -108,6 +139,11 @@ def build_megalodon(cfg: dict[str, Any], key: jax.Array) -> MegalodonForCausalLM
         rope_base=cfg.get("rope_base"),
         init_mode=cfg.get("init_mode", "he"),
         use_checkpoint=cfg.get("use_checkpoint", False),
+        param_dtype=param_dtype,
+        compute_dtype=compute_dtype,
+        accum_dtype=accum_dtype,
+        softmax_dtype=softmax_dtype,
+        gemm_backend=gemm_backend,
         pad_token_id=0,
     )
 
@@ -159,14 +195,15 @@ def init_megalodon_cache(
     Args:
         model: MegalodonForCausalLM model.
         batch_size: Batch size.
-        max_seq_len: Maximum sequence length.
+        max_seq_len: Maximum sequence length (unused; cache length comes from config).
 
     Returns:
         Initialized ModelCache.
     """
     from megalodon_jax import init_cache
 
-    return init_cache(model.model, batch_size, max_seq_len)
+    del max_seq_len  # cache length is derived from config in megalodon-jax v0.1.1
+    return init_cache(model.config, batch_size)
 
 
 # Type alias for cache

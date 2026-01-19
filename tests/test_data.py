@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from megalodon_enwik8_jax.data import (
+from megalodon_enwik8_jax.utils import (
     decode_tokens,
     encode_prompt,
     load_enwik8,
@@ -79,11 +79,10 @@ class TestSampleBatch:
         input_ids, labels = sample_batch(rng, train, 1, 10)
 
         # For autoregressive LM, labels[i] should predict the next token
-        # This is typically: labels = input_ids shifted left by 1
-        # But our implementation samples contiguous sequences where
-        # labels[t] = data[start + t + 1]
-        # Verify they're contiguous in the original data
-        pass  # Implementation dependent
+        # labels = input_ids shifted left by 1 for each sequence
+        input_np = np.asarray(input_ids)
+        labels_np = np.asarray(labels)
+        assert np.array_equal(labels_np[:, :-1], input_np[:, 1:])
 
 
 class TestSampleAccumBatch:

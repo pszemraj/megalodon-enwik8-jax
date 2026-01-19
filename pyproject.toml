@@ -26,7 +26,7 @@ dependencies = [
     "jax>=0.4.30",
     "equinox>=0.12.0",
     "optax>=0.2.0",
-    "megalodon-jax==0.1.0",
+    "megalodon-jax==0.1.1",
     "pyyaml>=6.0",
     "numpy>=1.26.0",
     "tqdm>=4.66.0",
@@ -35,10 +35,6 @@ dependencies = [
 [project.optional-dependencies]
 checkpoint = ["orbax-checkpoint>=0.5.0"]
 dev = ["pytest>=8.0", "ruff>=0.4.0"]
-
-[project.scripts]
-train-megalodon = "megalodon_enwik8_jax.cli:train_main"
-infer-megalodon = "megalodon_enwik8_jax.cli:inference_main"
 
 [tool.hatch.version]
 source = "vcs"
@@ -52,7 +48,6 @@ packages = ["src/megalodon_enwik8_jax"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-exclude = ["vendor"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]

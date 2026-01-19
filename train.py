@@ -3,11 +3,6 @@
 
 Unified training loop for both Llama and Megalodon models on enwik8
 character-level language modeling.
-
-Usage:
-    python train.py --config configs/test.yaml
-    python train.py --config configs/llama_512.yaml
-    python train.py --config configs/megalodon_multichunk_512.yaml
 """
 
 from __future__ import annotations
@@ -15,45 +10,56 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from typing import Any
 
-import equinox as eqx
 import jax
+import jax.numpy as jnp
 import numpy as np
 from tqdm.auto import tqdm
 
-from megalodon_enwik8_jax.checkpoint import load_checkpoint, save_checkpoint
-from megalodon_enwik8_jax.config import load_config, resolve_run_dir, validate_config
-from megalodon_enwik8_jax.data import decode_tokens, load_enwik8, sample_accum_batch, sample_batch
-from megalodon_enwik8_jax.generate import generate
 from megalodon_enwik8_jax.models import build_model
-from megalodon_enwik8_jax.training import (
+from megalodon_enwik8_jax.utils import (
+    assert_trainable_dtype,
     bpc_from_loss,
     build_optimizer,
+    count_trainable_params,
     create_train_state,
+    decode_tokens,
+    generate,
+    get_dtype,
+    load_checkpoint,
+    load_config,
+    load_enwik8,
     make_eval_step,
     make_train_step,
+    make_trainable_mask,
+    resolve_run_dir,
     run_validation,
+    sample_accum_batch,
+    sample_batch,
+    sample_trainable_dtypes,
+    save_checkpoint,
+    validate_config,
 )
 
 
-def _count_params(model: eqx.Module) -> int:
-    """Count total parameters in an Equinox model."""
-    params, _ = eqx.partition(model, eqx.is_array)
-    return sum(x.size for x in jax.tree.leaves(params))
+def _count_params(model: object, trainable_mask: Any) -> int:
+    """Count total trainable parameters in an Equinox model."""
+    return count_trainable_params(model, trainable_mask)
 
 
 def _format_params(n: int) -> str:
     """Format parameter count with K/M/B suffix."""
     if n >= 1e9:
         return f"{n / 1e9:.2f}B"
-    elif n >= 1e6:
+    if n >= 1e6:
         return f"{n / 1e6:.2f}M"
-    elif n >= 1e3:
+    if n >= 1e3:
         return f"{n / 1e3:.1f}K"
     return str(n)
 
 
-def log_metrics(path: Path, metrics: dict) -> None:
+def _log_metrics(path: Path, metrics: dict) -> None:
     """Append metrics as JSONL to file."""
     with open(path, "a") as f:
         f.write(
@@ -63,10 +69,7 @@ def log_metrics(path: Path, metrics: dict) -> None:
 
 
 def main() -> None:
-    """Run the training CLI.
-
-    :return None: None.
-    """
+    """Run the training script."""
     parser = argparse.ArgumentParser(
         description="Train language model on enwik8",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -116,7 +119,14 @@ def main() -> None:
     print("Building model...")
     key, model_key = jax.random.split(key)
     model = build_model(cfg, model_key)
-    n_params = _count_params(model)
+    trainable_mask = make_trainable_mask(model)
+    dtype = get_dtype(cfg)
+    print(f"Compute dtype: {dtype}")
+    if cfg["model"] == "llama":
+        assert_trainable_dtype(model, jnp.float32, trainable_mask)
+    dtype_samples = ", ".join(str(item) for item in sample_trainable_dtypes(model, trainable_mask))
+    print(f"Trainable dtype samples: {dtype_samples}")
+    n_params = _count_params(model, trainable_mask)
     print(f"Parameters: {_format_params(n_params)} ({n_params:,})")
 
     # Build optimizer
@@ -124,7 +134,7 @@ def main() -> None:
 
     # Create training state
     key, state_key = jax.random.split(key)
-    state = create_train_state(model, optimizer, state_key, step=0)
+    state = create_train_state(model, optimizer, state_key, step=0, trainable_mask=trainable_mask)
 
     # Resume from checkpoint if specified
     if args.resume:
@@ -140,7 +150,7 @@ def main() -> None:
 
     # Create JIT-compiled functions
     print("Compiling training functions...")
-    train_step = make_train_step(cfg, optimizer)
+    train_step = make_train_step(cfg, optimizer, trainable_mask)
     eval_step = make_eval_step(cfg)
 
     # Training hyperparameters
@@ -164,8 +174,9 @@ def main() -> None:
         if step % validate_every == 0:
             val_loss = run_validation(state.model, eval_step, val_data, np_rng, cfg)
             val_bpc = bpc_from_loss(val_loss)
-            log_metrics(
-                metrics_path, {"step": step, "val_loss": float(val_loss), "val_bpc": float(val_bpc)}
+            _log_metrics(
+                metrics_path,
+                {"step": step, "val_loss": float(val_loss), "val_bpc": float(val_bpc)},
             )
             tqdm.write(f"Step {step} | Val loss: {val_loss:.4f} | Val BPC: {val_bpc:.4f}")
 
@@ -177,7 +188,7 @@ def main() -> None:
         train_loss = float(metrics["loss"])
         train_bpc = float(bpc_from_loss(metrics["loss"]))
         grad_norm = float(metrics["grad_norm"])
-        log_metrics(
+        _log_metrics(
             metrics_path,
             {
                 "step": step,
@@ -210,6 +221,16 @@ def main() -> None:
         if step % save_every == 0 and step > 0:
             ckpt_path = save_checkpoint(run_dir, state, cfg)
             tqdm.write(f"Saved checkpoint: {ckpt_path}")
+
+    # Final validation (always record end-of-run metric)
+    final_step = int(state.step)
+    val_loss = run_validation(state.model, eval_step, val_data, np_rng, cfg)
+    val_bpc = bpc_from_loss(val_loss)
+    _log_metrics(
+        metrics_path,
+        {"step": final_step, "val_loss": float(val_loss), "val_bpc": float(val_bpc)},
+    )
+    print(f"\nStep {final_step} | Val loss: {val_loss:.4f} | Val BPC: {val_bpc:.4f}")
 
     # Final checkpoint
     ckpt_path = save_checkpoint(run_dir, state, cfg, tag="final")
