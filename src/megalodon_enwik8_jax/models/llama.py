@@ -22,6 +22,20 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float, Int
 
 
+def _linear_3d(
+    linear: eqx.nn.Linear,
+    x: Array,
+    compute_dtype: jnp.dtype,
+) -> Array:
+    """Apply a Linear layer over [B, T, D] with explicit compute dtype."""
+    x_cast = x.astype(compute_dtype)
+    weight = linear.weight.astype(compute_dtype)
+    y = jnp.einsum("btd,od->bto", x_cast, weight, preferred_element_type=jnp.float32)
+    if linear.bias is not None:
+        y = y + linear.bias.astype(compute_dtype)
+    return y.astype(compute_dtype)
+
+
 @dataclass(frozen=True)
 class LlamaConfig:
     """Configuration for Llama model."""
@@ -38,6 +52,7 @@ class LlamaConfig:
     norm_eps: float = 1e-5
     tied_embedding: bool = True
     embed_init_std: float = 0.02  # Embedding initialization std
+    compute_dtype: jnp.dtype = jnp.float32  # Dtype for matmul/activation compute
 
     @property
     def ffn_hidden_dim(self) -> int:
@@ -131,8 +146,8 @@ def apply_rotary_emb(
     seq_len = x.shape[2]
 
     # Slice frequencies for current sequence
-    cos = cos[offset : offset + seq_len, :]  # [T, D//2]
-    sin = sin[offset : offset + seq_len, :]  # [T, D//2]
+    cos = cos[offset : offset + seq_len, :].astype(jnp.float32)  # [T, D//2]
+    sin = sin[offset : offset + seq_len, :].astype(jnp.float32)  # [T, D//2]
 
     # Reshape for broadcasting: [T, D//2] -> [1, 1, T, D//2]
     cos = cos[None, None, :, :]
@@ -140,6 +155,8 @@ def apply_rotary_emb(
 
     # Split x into two halves
     x1, x2 = jnp.split(x, 2, axis=-1)
+    x1 = x1.astype(jnp.float32)
+    x2 = x2.astype(jnp.float32)
 
     # Apply rotation
     x_rotated = jnp.concatenate(
@@ -147,7 +164,7 @@ def apply_rotary_emb(
         axis=-1,
     )
 
-    return x_rotated
+    return x_rotated.astype(x.dtype)
 
 
 class CausalSelfAttention(eqx.Module):
@@ -161,6 +178,7 @@ class CausalSelfAttention(eqx.Module):
     sin: Array
     num_heads: int = eqx.field(static=True)
     head_dim: int = eqx.field(static=True)
+    compute_dtype: jnp.dtype = eqx.field(static=True)
 
     def __init__(
         self,
@@ -169,6 +187,7 @@ class CausalSelfAttention(eqx.Module):
         head_dim: int,
         max_seq_len: int = 2048,
         rope_theta: float = 10000.0,
+        compute_dtype: jnp.dtype = jnp.float32,
         *,
         key: jax.Array,
     ):
@@ -180,10 +199,12 @@ class CausalSelfAttention(eqx.Module):
             head_dim: Dimension per head.
             max_seq_len: Maximum sequence length for RoPE.
             rope_theta: RoPE theta parameter.
+            compute_dtype: Dtype for matmul/activation compute.
             key: PRNG key.
         """
         self.num_heads = num_heads
         self.head_dim = head_dim
+        self.compute_dtype = compute_dtype
         inner_dim = num_heads * head_dim
 
         keys = jax.random.split(key, 4)
@@ -213,10 +234,10 @@ class CausalSelfAttention(eqx.Module):
         """
         batch, seq_len, _ = x.shape
 
-        # Project to Q, K, V: x is [B, T, D], Linear expects [D] -> vmap twice
-        q = jax.vmap(jax.vmap(self.wq))(x)  # [B, T, inner_dim]
-        k = jax.vmap(jax.vmap(self.wk))(x)
-        v = jax.vmap(jax.vmap(self.wv))(x)
+        # Project to Q, K, V
+        q = _linear_3d(self.wq, x, self.compute_dtype)  # [B, T, inner_dim]
+        k = _linear_3d(self.wk, x, self.compute_dtype)
+        v = _linear_3d(self.wv, x, self.compute_dtype)
 
         # Reshape to [B, H, T, D_head]
         q = q.reshape(batch, seq_len, self.num_heads, self.head_dim).transpose(0, 2, 1, 3)
@@ -242,8 +263,10 @@ class CausalSelfAttention(eqx.Module):
         new_cache = (k, v) if return_cache else None
 
         # Compute attention
-        scale = self.head_dim**-0.5
-        attn_weights = jnp.einsum("bhid,bhjd->bhij", q, k) * scale
+        scale = jnp.asarray(self.head_dim**-0.5, dtype=jnp.float32)
+        attn_weights = (
+            jnp.einsum("bhid,bhjd->bhij", q, k, preferred_element_type=jnp.float32) * scale
+        )
 
         # Causal mask
         q_len, kv_len = q.shape[2], k.shape[2]
@@ -254,12 +277,14 @@ class CausalSelfAttention(eqx.Module):
         causal_mask = causal_mask[-q_len:, :]
         attn_weights = jnp.where(causal_mask, attn_weights, -jnp.inf)
 
-        attn_probs = jax.nn.softmax(attn_weights.astype(jnp.float32), axis=-1).astype(x.dtype)
-        out = jnp.einsum("bhij,bhjd->bhid", attn_probs, v)
+        attn_probs = jax.nn.softmax(attn_weights, axis=-1).astype(x.dtype)
+        out = jnp.einsum(
+            "bhij,bhjd->bhid", attn_probs, v, preferred_element_type=jnp.float32
+        ).astype(x.dtype)
 
         # Merge heads and project
         out = out.transpose(0, 2, 1, 3).reshape(batch, -1, self.num_heads * self.head_dim)
-        out = jax.vmap(jax.vmap(self.wo))(out)
+        out = _linear_3d(self.wo, out, self.compute_dtype)
 
         return out, new_cache
 
@@ -274,19 +299,22 @@ class SwiGLU(eqx.Module):
     w1: eqx.nn.Linear  # Gate projection
     w2: eqx.nn.Linear  # Down projection
     w3: eqx.nn.Linear  # Up projection
+    compute_dtype: jnp.dtype = eqx.field(static=True)
 
-    def __init__(self, dim: int, hidden_dim: int, *, key: jax.Array):
+    def __init__(self, dim: int, hidden_dim: int, compute_dtype: jnp.dtype, *, key: jax.Array):
         """Initialize SwiGLU.
 
         Args:
             dim: Input/output dimension.
             hidden_dim: Hidden dimension.
+            compute_dtype: Dtype for matmul/activation compute.
             key: PRNG key.
         """
         keys = jax.random.split(key, 3)
         self.w1 = eqx.nn.Linear(dim, hidden_dim, use_bias=False, key=keys[0])
         self.w2 = eqx.nn.Linear(hidden_dim, dim, use_bias=False, key=keys[1])
         self.w3 = eqx.nn.Linear(dim, hidden_dim, use_bias=False, key=keys[2])
+        self.compute_dtype = compute_dtype
 
     def __call__(self, x: Array) -> Array:
         """Apply SwiGLU.
@@ -297,10 +325,9 @@ class SwiGLU(eqx.Module):
         Returns:
             Output tensor of shape [B, T, D].
         """
-        # Linear expects [D], so vmap twice over B and T
-        gate = jax.vmap(jax.vmap(self.w1))(x)
-        up = jax.vmap(jax.vmap(self.w3))(x)
-        return jax.vmap(jax.vmap(self.w2))(jax.nn.silu(gate) * up)
+        gate = _linear_3d(self.w1, x, self.compute_dtype)
+        up = _linear_3d(self.w3, x, self.compute_dtype)
+        return _linear_3d(self.w2, jax.nn.silu(gate) * up, self.compute_dtype)
 
 
 class TransformerBlock(eqx.Module):
@@ -320,6 +347,7 @@ class TransformerBlock(eqx.Module):
         max_seq_len: int = 2048,
         rope_theta: float = 10000.0,
         norm_eps: float = 1e-5,
+        compute_dtype: jnp.dtype = jnp.float32,
         *,
         key: jax.Array,
     ):
@@ -333,6 +361,7 @@ class TransformerBlock(eqx.Module):
             max_seq_len: Maximum sequence length.
             rope_theta: RoPE theta.
             norm_eps: RMSNorm epsilon.
+            compute_dtype: Dtype for matmul/activation compute.
             key: PRNG key.
         """
         keys = jax.random.split(key, 4)
@@ -344,10 +373,16 @@ class TransformerBlock(eqx.Module):
             head_dim=head_dim,
             max_seq_len=max_seq_len,
             rope_theta=rope_theta,
+            compute_dtype=compute_dtype,
             key=keys[1],
         )
         self.ff_norm = RMSNorm(dim, eps=norm_eps, key=keys[2])
-        self.ff = SwiGLU(dim=dim, hidden_dim=ffn_hidden_dim, key=keys[3])
+        self.ff = SwiGLU(
+            dim=dim,
+            hidden_dim=ffn_hidden_dim,
+            compute_dtype=compute_dtype,
+            key=keys[3],
+        )
 
     def __call__(
         self,
@@ -414,6 +449,7 @@ class LlamaLM(eqx.Module):
                 max_seq_len=config.max_seq_len,
                 rope_theta=config.rope_theta,
                 norm_eps=config.norm_eps,
+                compute_dtype=config.compute_dtype,
                 key=keys[i + 1],
             )
             for i in range(config.depth)
@@ -455,8 +491,8 @@ class LlamaLM(eqx.Module):
         del deterministic, key  # unused
 
         # Embed tokens: input_ids [B, T] -> x [B, T, D]
-        # eqx.nn.Embedding expects scalar, so vmap twice
-        x = jax.vmap(jax.vmap(self.embed))(input_ids)
+        x = self.embed.weight[input_ids]
+        x = x.astype(self.config.compute_dtype)
 
         # Apply transformer blocks
         new_caches = [] if return_cache else None
@@ -471,11 +507,13 @@ class LlamaLM(eqx.Module):
 
         # Compute logits
         if self.lm_head is not None:
-            # Linear expects [D], so vmap twice
-            logits = jax.vmap(jax.vmap(self.lm_head))(x)
+            logits = _linear_3d(self.lm_head, x, self.config.compute_dtype)
         else:
             # Tied embeddings: logits = x @ embed.weight.T
-            logits = jnp.einsum("btd,vd->btv", x, self.embed.weight)
+            weight = self.embed.weight.astype(self.config.compute_dtype)
+            logits = jnp.einsum(
+                "btd,vd->btv", x, weight, preferred_element_type=jnp.float32
+            ).astype(x.dtype)
 
         return logits, new_caches
 
@@ -501,6 +539,7 @@ def build_llama(cfg: dict[str, Any], key: jax.Array) -> LlamaLM:
         rope_theta=cfg.get("rope_theta", 10000.0),
         norm_eps=cfg.get("norm_eps", 1e-5),
         tied_embedding=cfg.get("tied_embedding", True),
+        compute_dtype=(jnp.bfloat16 if cfg.get("dtype", "bf16").lower() == "bf16" else jnp.float32),
     )
     return LlamaLM(config, key=key)
 

@@ -13,12 +13,14 @@ from pathlib import Path
 from typing import Any
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 from tqdm.auto import tqdm
 
 from megalodon_enwik8_jax.models import build_model
 from megalodon_enwik8_jax.utils import (
     TrainState,
+    assert_mask_dtype,
     assert_trainable_dtype,
     bpc_from_loss,
     build_optimizer,
@@ -31,6 +33,7 @@ from megalodon_enwik8_jax.utils import (
     load_checkpoint,
     load_config,
     load_enwik8,
+    make_cast_mask,
     make_eval_step,
     make_train_step,
     make_trainable_mask,
@@ -121,11 +124,21 @@ def main() -> None:
     key, model_key = jax.random.split(key)
     model = build_model(cfg, model_key)
     trainable_mask = make_trainable_mask(model)
+    cast_mask = make_cast_mask(model, trainable_mask)
     dtype = get_dtype(cfg)
-    model = cast_trainable(model, dtype, trainable_mask)
-    assert_trainable_dtype(model, dtype, trainable_mask)
-    dtype_samples = ", ".join(str(item) for item in sample_trainable_dtypes(model, trainable_mask))
-    print(f"Trainable dtype samples: {dtype_samples}")
+    cast_params = dtype != jnp.float32 and cfg["model"] != "llama"
+    print(f"Compute dtype: {dtype}")
+    if cast_params:
+        model = cast_trainable(model, dtype, trainable_mask, cast_mask=cast_mask)
+        assert_mask_dtype(model, dtype, cast_mask)
+        dtype_samples = ", ".join(str(item) for item in sample_trainable_dtypes(model, cast_mask))
+        print(f"Cast dtype samples: {dtype_samples}")
+    else:
+        assert_trainable_dtype(model, jnp.float32, trainable_mask)
+        dtype_samples = ", ".join(
+            str(item) for item in sample_trainable_dtypes(model, trainable_mask)
+        )
+        print(f"Trainable dtype samples: {dtype_samples}")
     n_params = _count_params(model, trainable_mask)
     print(f"Parameters: {_format_params(n_params)} ({n_params:,})")
 
@@ -146,13 +159,14 @@ def main() -> None:
             model_builder=build_model,
             optimizer=optimizer,
         )
-        state = TrainState(
-            step=state.step,
-            model=cast_trainable(state.model, dtype, trainable_mask),
-            opt_state=state.opt_state,
-            key=state.key,
-        )
-        assert_trainable_dtype(state.model, dtype, trainable_mask)
+        if cast_params:
+            state = TrainState(
+                step=state.step,
+                model=cast_trainable(state.model, dtype, trainable_mask, cast_mask=cast_mask),
+                opt_state=state.opt_state,
+                key=state.key,
+            )
+            assert_mask_dtype(state.model, dtype, cast_mask)
         print(f"Resumed at step {int(state.step)}")
 
     # Create JIT-compiled functions

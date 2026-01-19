@@ -385,16 +385,64 @@ def make_trainable_mask(model: eqx.Module) -> Any:
     return mask
 
 
+def make_cast_mask(model: eqx.Module, trainable_mask: Any | None = None) -> Any:
+    """Create a pytree mask for dtype casting without excluding trainable params."""
+    if trainable_mask is None:
+        trainable_mask = make_trainable_mask(model)
+
+    if isinstance(model, LlamaLM):
+        return trainable_mask
+
+    mask = trainable_mask
+    try:
+        layer_count = len(model.model.layers)
+    except AttributeError:
+        return mask
+
+    def _replace(selector: Callable[[Any], Any]) -> None:
+        nonlocal mask
+        mask = eqx.tree_at(selector, mask, replace=[False] * layer_count)
+
+    # ComplexEMA parameters (sensitive to bf16 quantization)
+    _replace(lambda m: [layer.attn.cema.alpha for layer in m.model.layers])
+    _replace(lambda m: [layer.attn.cema.delta for layer in m.model.layers])
+    _replace(lambda m: [layer.attn.cema.theta for layer in m.model.layers])
+    _replace(lambda m: [layer.attn.cema.gamma_real for layer in m.model.layers])
+    _replace(lambda m: [layer.attn.cema.gamma_imag for layer in m.model.layers])
+    _replace(lambda m: [layer.attn.cema.omega for layer in m.model.layers])
+
+    # Norm parameters (keep fp32)
+    _replace(lambda m: [layer.attn.timenorm.weight for layer in m.model.layers])
+    _replace(lambda m: [layer.attn.timenorm.bias for layer in m.model.layers])
+    _replace(lambda m: [layer.attn.rmsnorm.gamma for layer in m.model.layers])
+    _replace(lambda m: [layer.ffn.norm.weight for layer in m.model.layers])
+    _replace(lambda m: [layer.ffn.norm.bias for layer in m.model.layers])
+
+    # Per-head affine for Q/K
+    _replace(lambda m: [layer.attn.gamma for layer in m.model.layers])
+    _replace(lambda m: [layer.attn.beta for layer in m.model.layers])
+
+    # Final norm
+    mask = eqx.tree_at(lambda m: m.model.norm.weight, mask, replace=False)
+    mask = eqx.tree_at(lambda m: m.model.norm.bias, mask, replace=False)
+
+    return mask
+
+
 def cast_trainable(
     model: eqx.Module,
     dtype: jnp.dtype,
     trainable_mask: Any | None = None,
+    cast_mask: Any | None = None,
 ) -> eqx.Module:
-    """Cast trainable floating-point parameters to the requested dtype."""
+    """Cast selected floating-point parameters to the requested dtype."""
     if trainable_mask is None:
         trainable_mask = make_trainable_mask(model)
 
-    params, static = eqx.partition(model, trainable_mask)
+    if cast_mask is None:
+        cast_mask = trainable_mask
+
+    params, static = eqx.partition(model, cast_mask)
 
     def _cast_leaf(value: Any) -> Any:
         if value is None:
@@ -409,16 +457,9 @@ def cast_trainable(
     return eqx.combine(params, static)
 
 
-def assert_trainable_dtype(
-    model: eqx.Module,
-    dtype: jnp.dtype,
-    trainable_mask: Any | None = None,
-) -> None:
-    """Assert all trainable floating-point parameters match the requested dtype."""
-    if trainable_mask is None:
-        trainable_mask = make_trainable_mask(model)
-
-    params = eqx.filter(model, trainable_mask)
+def assert_mask_dtype(model: eqx.Module, dtype: jnp.dtype, mask: Any) -> None:
+    """Assert all masked floating-point parameters match the requested dtype."""
+    params = eqx.filter(model, mask)
     leaves = [leaf for leaf in jax.tree.leaves(params) if leaf is not None]
 
     mismatched = [
@@ -428,7 +469,19 @@ def assert_trainable_dtype(
     ]
     if mismatched:
         unique = sorted({str(item) for item in mismatched})
-        raise ValueError(f"Trainable params dtype mismatch. Expected {dtype}, found {unique}.")
+        raise ValueError(f"Masked params dtype mismatch. Expected {dtype}, found {unique}.")
+
+
+def assert_trainable_dtype(
+    model: eqx.Module,
+    dtype: jnp.dtype,
+    trainable_mask: Any | None = None,
+) -> None:
+    """Assert all trainable floating-point parameters match the requested dtype."""
+    if trainable_mask is None:
+        trainable_mask = make_trainable_mask(model)
+
+    assert_mask_dtype(model, dtype, trainable_mask)
 
 
 def count_trainable_params(
