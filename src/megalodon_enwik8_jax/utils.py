@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import gzip
-import json
-import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -34,7 +32,6 @@ KNOWN_KEYS = frozenset(
         "run_dir",
         "model",
         "seed",
-        "comparison_basis",
         # Model - shared
         "num_tokens",
         "param_dtype",
@@ -74,11 +71,9 @@ KNOWN_KEYS = frozenset(
         "num_batches",
         "batch_size",
         "grad_accum_every",
-        "optimizer",
         "learning_rate",
         "lr_schedule",
         "warmup_steps",
-        "min_learning_rate_ratio",
         "adam_beta1",
         "adam_beta2",
         "adam_eps",
@@ -134,10 +129,6 @@ def validate_config(cfg: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(f"model must be 'megalodon' or 'llama', got '{model}'")
     cfg["model"] = model
 
-    comparison_basis = cfg.get("comparison_basis")
-    if comparison_basis not in {None, "paper_scaled_width_depth"}:
-        raise ValueError(f"Unsupported comparison_basis: {comparison_basis!r}")
-
     # Validate vocab_size
     num_tokens = cfg.get("num_tokens", 256)
     if num_tokens != 256:
@@ -173,13 +164,9 @@ def validate_config(cfg: dict[str, Any]) -> dict[str, Any]:
 
     # Llama baseline does not implement dropout; require zeroed values.
     if model == "llama":
-        if "init_mode" in cfg:
-            raise ValueError("init_mode is Megalodon-specific; Llama uses Gaussian initialization")
         for key in ("dropout", "attention_dropout", "hidden_dropout"):
             if cfg.get(key, 0.0) > 0.0:
                 raise ValueError(f"{key} must be 0.0 for Llama baseline.")
-    elif "init_std" in cfg:
-        raise ValueError("init_std is Llama-specific; Megalodon uses init_mode")
 
     # Apply defaults for optional fields
     defaults = {
@@ -188,11 +175,9 @@ def validate_config(cfg: dict[str, Any]) -> dict[str, Any]:
         "num_batches": 1200,
         "batch_size": 1,
         "grad_accum_every": 1,
-        "optimizer": "adamw",
         "learning_rate": 1e-3,
         "lr_schedule": "constant",
         "warmup_steps": 0,
-        "min_learning_rate_ratio": 0.0,
         "adam_beta1": 0.9,
         "adam_beta2": 0.999,
         "adam_eps": 1e-8,
@@ -207,72 +192,6 @@ def validate_config(cfg: dict[str, Any]) -> dict[str, Any]:
             cfg[key] = default
 
     cfg.setdefault("val_batch_size", cfg["batch_size"])
-
-    positive_integer_keys = (
-        "num_batches",
-        "batch_size",
-        "grad_accum_every",
-        "validate_every",
-        "val_batch_size",
-        "val_batches",
-    )
-    for key in positive_integer_keys:
-        value = cfg[key]
-        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-            raise ValueError(f"{key} must be a positive integer, got {value!r}")
-
-    optimizer = str(cfg["optimizer"]).lower()
-    if optimizer != "adamw":
-        raise ValueError(f"optimizer must be 'adamw', got {cfg['optimizer']!r}")
-    cfg["optimizer"] = optimizer
-
-    lr_schedule = str(cfg["lr_schedule"]).lower()
-    if lr_schedule not in {"constant", "warmup_cosine"}:
-        raise ValueError(
-            f"lr_schedule must be 'constant' or 'warmup_cosine', got {cfg['lr_schedule']!r}"
-        )
-    cfg["lr_schedule"] = lr_schedule
-
-    warmup_steps = cfg["warmup_steps"]
-    if isinstance(warmup_steps, bool) or not isinstance(warmup_steps, int) or warmup_steps < 0:
-        raise ValueError(f"warmup_steps must be a non-negative integer, got {warmup_steps!r}")
-    if lr_schedule == "constant" and warmup_steps != 0:
-        raise ValueError("warmup_steps must be 0 when lr_schedule is constant")
-    if lr_schedule == "warmup_cosine" and not 0 < warmup_steps < cfg["num_batches"]:
-        raise ValueError(
-            "warmup_cosine requires 0 < warmup_steps < num_batches, got "
-            f"{warmup_steps} and {cfg['num_batches']}"
-        )
-
-    finite_numeric_fields = (
-        "learning_rate",
-        "min_learning_rate_ratio",
-        "adam_beta1",
-        "adam_beta2",
-        "adam_eps",
-        "weight_decay",
-        "grad_clip_norm",
-    )
-    for key in finite_numeric_fields:
-        value = cfg.get(key)
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not np.isfinite(value):
-            raise ValueError(f"{key} must be a finite number, got {value!r}")
-
-    if cfg["learning_rate"] <= 0:
-        raise ValueError(f"learning_rate must be positive, got {cfg['learning_rate']}")
-    if not 0.0 <= cfg["min_learning_rate_ratio"] <= 1.0:
-        raise ValueError(
-            f"min_learning_rate_ratio must be in [0, 1], got {cfg['min_learning_rate_ratio']}"
-        )
-    for key in ("adam_beta1", "adam_beta2"):
-        if not 0.0 <= cfg[key] < 1.0:
-            raise ValueError(f"{key} must be in [0, 1), got {cfg[key]}")
-    if cfg["adam_eps"] <= 0:
-        raise ValueError(f"adam_eps must be positive, got {cfg['adam_eps']}")
-    if cfg["weight_decay"] < 0:
-        raise ValueError(f"weight_decay must be non-negative, got {cfg['weight_decay']}")
-    if cfg["grad_clip_norm"] < 0:
-        raise ValueError(f"grad_clip_norm must be non-negative, got {cfg['grad_clip_norm']}")
 
     return cfg
 
@@ -364,9 +283,6 @@ def sample_batch(
         The input token IDs and their one-byte-shifted labels.
     """
     max_start = len(data_u8) - seq_len - 1
-    if max_start < 0:
-        raise ValueError(f"Need at least {seq_len + 1} bytes, got {len(data_u8)}")
-
     starts = rng.integers(0, max_start + 1, size=(batch_size,))
     sequences = np.stack(
         [data_u8[start : start + seq_len + 1] for start in starts],
@@ -400,10 +316,6 @@ def sample_accum_batch(
     """
     max_start = len(data_u8) - seq_len - 1
     total_seqs = batch_size * grad_accum
-
-    if max_start < 0:
-        raise ValueError(f"Need at least {seq_len + 1} bytes, got {len(data_u8)}")
-
     starts = rng.integers(0, max_start + 1, size=(total_seqs,))
     sequences = np.stack(
         [data_u8[start : start + seq_len + 1] for start in starts],
@@ -437,11 +349,6 @@ def make_fixed_batches(
         Batched input token IDs and their one-byte-shifted labels.
     """
     max_start = len(data_u8) - seq_len - 1
-    if max_start < 0:
-        raise ValueError(f"Need at least {seq_len + 1} bytes, got {len(data_u8)}")
-    if batch_size <= 0 or num_batches <= 0:
-        raise ValueError("batch_size and num_batches must be positive")
-
     total_sequences = batch_size * num_batches
     starts = np.linspace(0, max_start, num=total_sequences, dtype=np.int64)
     sequences = np.stack(
@@ -872,13 +779,12 @@ def build_learning_rate(cfg: dict[str, Any]) -> LearningRate:
     if schedule != "warmup_cosine":
         raise ValueError(f"Unsupported lr_schedule: {schedule!r}")
 
-    end_value = learning_rate * float(cfg.get("min_learning_rate_ratio", 0.0))
     return optax.warmup_cosine_decay_schedule(
         init_value=0.0,
         peak_value=learning_rate,
         warmup_steps=int(cfg["warmup_steps"]),
         decay_steps=int(cfg["num_batches"]),
-        end_value=end_value,
+        end_value=0.0,
     )
 
 
@@ -892,8 +798,6 @@ def learning_rate_at_step(cfg: dict[str, Any], step: int) -> float:
     Returns:
         Learning rate applied at ``step``.
     """
-    if step < 0:
-        raise ValueError(f"step must be non-negative, got {step}")
     learning_rate = build_learning_rate(cfg)
     if callable(learning_rate):
         return float(learning_rate(jnp.asarray(step, dtype=jnp.int32)))
@@ -910,9 +814,6 @@ def build_optimizer(cfg: dict[str, Any]) -> optax.GradientTransformation:
         Composed Optax gradient transformation.
     """
     learning_rate = build_learning_rate(cfg)
-    optimizer_name = cfg.get("optimizer", "adamw")
-    if optimizer_name != "adamw":
-        raise ValueError(f"Unsupported optimizer: {optimizer_name!r}")
     weight_decay = float(cfg.get("weight_decay", 0.0))
     grad_clip_norm = float(cfg.get("grad_clip_norm", 1.0))
     b1 = float(cfg.get("adam_beta1", 0.9))
@@ -1202,123 +1103,58 @@ def run_validation(
 
 
 # =============================================================================
-# Model artifacts
+# Model serialization
 # =============================================================================
-
-
-ARTIFACT_SCHEMA_VERSION = 1
-
-
-def write_json_atomic(path: str | Path, value: dict[str, Any]) -> None:
-    """Write JSON atomically in the destination directory.
-
-    Args:
-        path: Destination file.
-        value: JSON-compatible mapping to serialize.
-    """
-    path = Path(path)
-    temporary = path.with_suffix(f"{path.suffix}.tmp")
-    with open(temporary, "w") as file:
-        json.dump(value, file, indent=2, sort_keys=True)
-        file.write("\n")
-    os.replace(temporary, path)
-
-
-def write_yaml_atomic(path: str | Path, value: dict[str, Any]) -> None:
-    """Write YAML atomically in the destination directory.
-
-    Args:
-        path: Destination file.
-        value: Mapping to serialize as YAML.
-    """
-    path = Path(path)
-    temporary = path.with_suffix(f"{path.suffix}.tmp")
-    with open(temporary, "w") as file:
-        yaml.safe_dump(value, file, default_flow_style=False, sort_keys=False)
-    os.replace(temporary, path)
 
 
 def save_model_artifact(
     run_dir: str | Path,
     model: eqx.Module,
     cfg: dict[str, Any],
-    metadata: dict[str, Any],
 ) -> Path:
-    """Save one final, model-only artifact plus its run manifest.
+    """Save a model and the configuration needed to load it.
 
     Args:
         run_dir: Destination run directory.
         model: Trained Megalodon or Llama model.
         cfg: Resolved experiment configuration.
-        metadata: Run metadata to include in the manifest.
 
     Returns:
         Path to the serialized model payload.
     """
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
-    write_yaml_atomic(run_dir / "config.yaml", cfg)
+    with open(run_dir / "config.yaml", "w") as file:
+        yaml.safe_dump(cfg, file, default_flow_style=False, sort_keys=False)
 
     if isinstance(model, LlamaLM):
         model_path = run_dir / "model.eqx"
-        temporary = model_path.with_suffix(".eqx.tmp")
-        eqx.tree_serialise_leaves(temporary, model)
-        os.replace(temporary, model_path)
+        eqx.tree_serialise_leaves(model_path, model)
     else:
         from megalodon_jax import save_checkpoint as save_megalodon_checkpoint
 
         model_path = run_dir / "model.safetensors"
         save_megalodon_checkpoint(model, model_path)
 
-    manifest = {
-        "schema_version": ARTIFACT_SCHEMA_VERSION,
-        "model_type": cfg["model"],
-        "model_file": model_path.name,
-        "config_file": "config.yaml",
-        **metadata,
-    }
-    write_json_atomic(run_dir / "manifest.json", manifest)
     return model_path
 
 
 def load_model_artifact(
     run_dir: str | Path,
     key: jax.Array,
-) -> tuple[eqx.Module, dict[str, Any], dict[str, Any]]:
-    """Load a completed run's model-only artifact.
+) -> tuple[eqx.Module, dict[str, Any]]:
+    """Load a saved model and its configuration.
 
     Args:
-        run_dir: Completed run directory containing config and manifest files.
+        run_dir: Run directory containing the model and config files.
         key: PRNG key used to construct or restore the model.
 
     Returns:
-        Loaded model, validated configuration, and manifest.
+        Loaded model and validated configuration.
     """
     run_dir = Path(run_dir)
-    manifest_path = run_dir / "manifest.json"
-    config_path = run_dir / "config.yaml"
-    if not manifest_path.exists() or not config_path.exists():
-        raise FileNotFoundError(f"Completed run metadata not found in {run_dir}")
-
-    with open(manifest_path) as file:
-        manifest = json.load(file)
-    if manifest.get("schema_version") != ARTIFACT_SCHEMA_VERSION:
-        raise ValueError(
-            f"Unsupported artifact schema {manifest.get('schema_version')!r}; "
-            f"expected {ARTIFACT_SCHEMA_VERSION}"
-        )
-
-    cfg = validate_config(load_config(config_path))
-    if manifest.get("model_type") != cfg["model"]:
-        raise ValueError("Manifest model_type does not match config.yaml")
-    expected_model_file = "model.safetensors" if cfg["model"] == "megalodon" else "model.eqx"
-    if manifest.get("model_file") != expected_model_file:
-        raise ValueError(
-            f"Unexpected model payload {manifest.get('model_file')!r}; expected {expected_model_file!r}"
-        )
-    model_path = run_dir / expected_model_file
-    if not model_path.is_file():
-        raise FileNotFoundError(f"Model payload not found: {model_path}")
+    cfg = validate_config(load_config(run_dir / "config.yaml"))
+    model_path = run_dir / ("model.safetensors" if cfg["model"] == "megalodon" else "model.eqx")
 
     if cfg["model"] == "megalodon":
         from megalodon_jax import load_checkpoint as load_megalodon_checkpoint
@@ -1327,4 +1163,4 @@ def load_model_artifact(
     else:
         skeleton = build_model(cfg, key)
         model = eqx.tree_deserialise_leaves(model_path, skeleton)
-    return model, cfg, manifest
+    return model, cfg

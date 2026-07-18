@@ -1,7 +1,6 @@
 # Twice-horizon extension of llama2_paper_scaled_512.yaml.
 run_dir: runs/paper_scaled_llama2_2400
 model: llama
-comparison_basis: paper_scaled_width_depth
 
 num_tokens: 256
 dim: 384
@@ -25,11 +24,9 @@ jit: true
 num_batches: 2400
 batch_size: 128
 grad_accum_every: 1
-optimizer: adamw
 learning_rate: 0.0007
 lr_schedule: warmup_cosine
 warmup_steps: 12
-min_learning_rate_ratio: 0.0
 adam_beta1: 0.9
 adam_beta2: 0.95
 adam_eps: 1.0e-8

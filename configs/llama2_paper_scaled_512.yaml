@@ -1,7 +1,6 @@
 # Reduced-width Llama 2 baseline at the same d=384, L=6 scale as Megalodon.
 run_dir: runs/paper_scaled_llama2
 model: llama
-comparison_basis: paper_scaled_width_depth
 
 # Architecture: retain Llama 2's 128-wide heads and rounded 8d/3 SwiGLU width.
 num_tokens: 256
@@ -27,11 +26,9 @@ jit: true
 num_batches: 1200
 batch_size: 128
 grad_accum_every: 1
-optimizer: adamw
 learning_rate: 0.0007
 lr_schedule: warmup_cosine
 warmup_steps: 6
-min_learning_rate_ratio: 0.0
 adam_beta1: 0.9
 adam_beta2: 0.95
 adam_eps: 1.0e-8

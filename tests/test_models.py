@@ -208,7 +208,7 @@ class TestModelInterface:
         assert jnp.allclose(logits1, logits2)
 
     def test_forward_model_rejects_unknown_model(self) -> None:
-        """forward_model fails closed for unsupported model objects."""
+        """forward_model reports unsupported model objects."""
         input_ids = jnp.zeros((1, 1), dtype=jnp.int32)
 
         with pytest.raises(TypeError, match="Unsupported model type: object"):

@@ -28,7 +28,6 @@ from megalodon_enwik8_jax.utils import (
 def test_optimizer_uses_uniform_decoupled_adamw_decay() -> None:
     """AdamW decays parameters outside the adaptive gradient moments."""
     cfg = {
-        "optimizer": "adamw",
         "learning_rate": 0.1,
         "weight_decay": 0.2,
         "grad_clip_norm": 0.0,
@@ -50,14 +49,13 @@ def test_warmup_cosine_schedule_uses_total_horizon() -> None:
         "lr_schedule": "warmup_cosine",
         "warmup_steps": 5,
         "num_batches": 20,
-        "min_learning_rate_ratio": 0.1,
     }
     schedule = build_learning_rate(cfg)
 
     assert callable(schedule)
     assert float(schedule(0)) == pytest.approx(0.0)
     assert float(schedule(5)) == pytest.approx(1e-3)
-    assert float(schedule(20)) == pytest.approx(1e-4)
+    assert float(schedule(20)) == pytest.approx(0.0)
 
 
 class TestTrainingSmokeTest:

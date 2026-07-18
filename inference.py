@@ -36,16 +36,11 @@ def main() -> None:
 
     key = jax.random.PRNGKey(args.seed)
     key, load_key, generation_key = jax.random.split(key, 3)
-    model, cfg, manifest = load_model_artifact(args.run_dir, load_key)
+    model, cfg = load_model_artifact(args.run_dir, load_key)
     trainable_mask = make_trainable_mask(model)
     if cfg["model"] == "llama":
         assert_trainable_dtype(model, jnp.float32, trainable_mask)
     parameter_count = count_trainable_params(model, trainable_mask)
-    if parameter_count != manifest["parameter_count"]:
-        raise ValueError(
-            f"Loaded parameter count {parameter_count} does not match manifest "
-            f"{manifest['parameter_count']}"
-        )
 
     prompt_ids = encode_prompt(args.prompt)
     generated, _, _ = generate(

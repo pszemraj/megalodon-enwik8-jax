@@ -107,11 +107,6 @@ class LlamaConfig:
     init_std: float = 0.02
     compute_dtype: jnp.dtype = jnp.float32  # Dtype for matmul/activation compute
 
-    def __post_init__(self) -> None:
-        """Validate initialization settings."""
-        if self.init_std <= 0:
-            raise ValueError(f"init_std must be positive, got {self.init_std}")
-
 
 class RMSNorm(eqx.Module):
     """Root Mean Square Layer Normalization.

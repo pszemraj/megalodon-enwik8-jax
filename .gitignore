@@ -113,7 +113,6 @@ _version.py
 
 # Training runs and checkpoints
 runs/
-results/
 checkpoints/
 *.eqx
 *.ckpt
@@ -126,8 +125,6 @@ logs/
 # JAX compilation cache
 jax_cache/
 .jax_cache/
-
-# The checked-in data/enwik8.gz file is the experiment data contract.
 
 # Temporary files
 *.tmp
