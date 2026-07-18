@@ -188,8 +188,7 @@ def main() -> None:
         compiled_train_step = train_step.lower(state, compile_inputs, compile_labels).compile()
     else:
         compiled_train_step = train_step
-    compiled_state, compiled_metrics = compiled_train_step(state, compile_inputs, compile_labels)
-    jax.block_until_ready((compiled_state, compiled_metrics))
+    jax.block_until_ready(compiled_train_step(state, compile_inputs, compile_labels))
     train_compile_seconds = time.perf_counter() - started
 
     print("Compiling and synchronizing the evaluation step...")
