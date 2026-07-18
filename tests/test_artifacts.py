@@ -37,4 +37,4 @@ def test_model_artifact_roundtrip(
 
     assert payload.name == ("model.eqx" if cfg["model"] == "llama" else "model.safetensors")
     assert loaded_cfg == cfg
-    assert jnp.allclose(actual_logits, expected_logits, atol=2e-2, rtol=2e-2)
+    assert jnp.array_equal(actual_logits, expected_logits)
