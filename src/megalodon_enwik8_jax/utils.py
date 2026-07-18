@@ -162,8 +162,22 @@ def validate_config(cfg: dict[str, Any]) -> dict[str, Any]:
         else:
             raise ValueError(f"{key} must be bf16/fp32 or a JAX dtype, got '{value}'")
 
-    # Llama baseline does not implement dropout; require zeroed values.
+    # Llama only exposes compute precision; its other precision choices are fixed to FP32.
     if model == "llama":
+        for key in (
+            "param_dtype",
+            "accum_dtype",
+            "attention_softmax_dtype",
+            "loss_softmax_dtype",
+        ):
+            value = cfg.get(key)
+            if value is None:
+                continue
+            is_fp32 = value == "fp32" if isinstance(value, str) else jnp.dtype(value) == jnp.float32
+            if not is_fp32:
+                raise ValueError(f"{key} must be fp32 for Llama baseline.")
+
+        # Llama baseline does not implement dropout; require zeroed values.
         for key in ("dropout", "attention_dropout", "hidden_dropout"):
             if cfg.get(key, 0.0) > 0.0:
                 raise ValueError(f"{key} must be 0.0 for Llama baseline.")
