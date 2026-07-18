@@ -529,7 +529,8 @@ def _generate_llama(
         key: JAX pseudo-random number generator key.
 
     Returns:
-        Generated sequences, the final attention cache, and the updated random key.
+        Generated sequences, the attention cache used to sample the final token, and
+        the updated random key.
     """
     if max_new_tokens < 0:
         raise ValueError(f"max_new_tokens must be non-negative, got {max_new_tokens}")

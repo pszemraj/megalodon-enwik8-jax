@@ -105,6 +105,8 @@ The longer mean trajectory is:
 
 Llama is 1.62× faster in the 1,200-update run and 1.63× faster in the 2,400-update run. That is a real result for this regime, not evidence that the model math is wrong. The paper's throughput advantage appears at much longer contexts, where chunk-local attention avoids Llama's quadratic full-attention cost; at context 512, tiny depth, and one GPU, Megalodon's CEMA and normalization work is overhead while Llama's dense kernels are exceptionally efficient.
 
+Synchronized bytes/s times only the compiled device update through synchronization; host-side batch sampling is excluded, so this is not end-to-end input-pipeline throughput.
+
 ## Reproduction
 
 Run the 1,200-update primary comparison:
