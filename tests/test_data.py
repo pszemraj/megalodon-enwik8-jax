@@ -8,6 +8,7 @@ from megalodon_enwik8_jax.utils import (
     decode_tokens,
     encode_prompt,
     load_enwik8,
+    make_fixed_batches,
     sample_accum_batch,
     sample_batch,
 )
@@ -107,6 +108,29 @@ class TestSampleAccumBatch:
         assert labels.dtype == np.int32
 
 
+class TestFixedBatches:
+    """Tests for seed-independent validation windows."""
+
+    def test_fixed_batches_are_evenly_spaced_and_repeatable(self) -> None:
+        data = np.arange(40, dtype=np.uint8)
+
+        first = make_fixed_batches(data, batch_size=1, num_batches=3, seq_len=4)
+        second = make_fixed_batches(data, batch_size=1, num_batches=3, seq_len=4)
+
+        assert np.array_equal(first[0], second[0])
+        assert list(np.asarray(first[0])[:, 0, 0]) == [0, 17, 35]
+        assert np.array_equal(np.asarray(first[1])[:, :, :-1], np.asarray(first[0])[:, :, 1:])
+
+    def test_fixed_windows_do_not_depend_on_batch_shape(self) -> None:
+        data = np.arange(80, dtype=np.uint8)
+
+        six_singleton_batches = make_fixed_batches(data, batch_size=1, num_batches=6, seq_len=4)
+        one_batch = make_fixed_batches(data, batch_size=6, num_batches=1, seq_len=4)
+
+        for singleton, batched in zip(six_singleton_batches, one_batch, strict=True):
+            assert np.array_equal(np.asarray(singleton).reshape(6, 4), np.asarray(batched)[0])
+
+
 class TestEncodeDecodeTokens:
     """Tests for token encoding/decoding."""
 
@@ -129,11 +153,9 @@ class TestEncodeDecodeTokens:
         assert list(np.asarray(tokens).flatten()) == [65, 66, 67]  # ASCII values
 
     def test_decode_handles_special_chars(self) -> None:
-        """decode_tokens replaces control chars with spaces for display."""
+        """decode_tokens preserves control bytes instead of changing the sample."""
         import jax.numpy as jnp
 
-        # Tab, newline, carriage return (all < 32) are replaced with space
         tokens = jnp.array([9, 10, 13], dtype=jnp.int32)
         decoded = decode_tokens(tokens)
-        # Implementation replaces control chars (< 32) with space for display
-        assert decoded == "   "
+        assert decoded == "\t\n\r"

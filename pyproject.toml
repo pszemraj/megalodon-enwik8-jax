@@ -23,17 +23,17 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "jax>=0.4.30",
-    "equinox>=0.12.0",
-    "optax>=0.2.0",
-    "megalodon-jax==0.1.1",
+    "jax>=0.10.2,<0.11",
+    "equinox>=0.13.8,<0.14",
+    "optax==0.2.8",
+    "megalodon-jax==0.2.1",
     "pyyaml>=6.0",
-    "numpy>=1.26.0",
+    "numpy>=2.0",
+    "safetensors>=0.4",
     "tqdm>=4.66.0",
 ]
 
 [project.optional-dependencies]
-checkpoint = ["orbax-checkpoint>=0.5.0"]
 dev = ["pytest>=8.0", "ruff>=0.4.0"]
 
 [tool.hatch.version]

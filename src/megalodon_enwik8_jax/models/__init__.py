@@ -11,10 +11,10 @@ import jax
 from jaxtyping import Array, Float, Int
 
 from .llama import LlamaLM, build_llama, forward_llama
-from .megalodon import MEGALODON_JAX_AVAILABLE, build_megalodon, forward_megalodon
+from .megalodon import MegalodonForCausalLM, build_megalodon, forward_megalodon
 
 if TYPE_CHECKING:
-    from .megalodon import MegalodonForCausalLM, ModelCache
+    from .megalodon import ModelCache
 
 LlamaCache = list[tuple[Array, Array]]
 
@@ -22,20 +22,20 @@ LlamaCache = list[tuple[Array, Array]]
 def build_model(cfg: dict[str, Any], key: jax.Array) -> LlamaLM | MegalodonForCausalLM:
     """Build model based on config.
 
-    :param dict[str, Any] cfg: Configuration dictionary with "model" key.
-    :param jax.Array key: PRNG key.
-    :raises ImportError: If Megalodon is requested but unavailable.
-    :raises ValueError: If model type is unknown.
-    :return LlamaLM | MegalodonForCausalLM: Initialized model instance.
+    Args:
+        cfg: Configuration dictionary with a ``model`` key.
+        key: PRNG key.
+
+    Returns:
+        Initialized model instance.
+
+    Raises:
+        ValueError: If the configured model type is unknown.
     """
     model_type = cfg.get("model", "llama").lower()
     if model_type == "llama":
         model = build_llama(cfg, key)
     elif model_type == "megalodon":
-        if not MEGALODON_JAX_AVAILABLE:
-            raise ImportError(
-                "megalodon-jax required. Install with: pip install megalodon-jax==0.1.1"
-            )
         model = build_megalodon(cfg, key)
     else:
         raise ValueError(f"Unknown model type: {model_type}")
@@ -53,18 +53,25 @@ def forward_model(
 ) -> tuple[Float[Array, "batch seq vocab"], LlamaCache | ModelCache | None]:
     """Forward pass for any model.
 
-    :param LlamaLM | MegalodonForCausalLM model: Model instance.
-    :param Int[Array, "batch seq"] input_ids: Input token IDs of shape [B, T].
-    :param LlamaCache | ModelCache | None cache: Optional cache for generation.
-    :param bool return_cache: Whether to return updated cache.
-    :param bool deterministic: Whether to use deterministic mode.
-    :param jax.Array | None key: PRNG key.
-    :return tuple[Float[Array, "batch seq vocab"], LlamaCache | ModelCache | None]:
-        Logits and cache tuple.
+    Args:
+        model: Supported model instance.
+        input_ids: Input token IDs of shape ``[batch, sequence]``.
+        cache: Optional cache for generation.
+        return_cache: Whether to return the updated cache.
+        deterministic: Whether to use deterministic mode.
+        key: PRNG key for stochastic layers.
+
+    Returns:
+        Logits and the optional updated cache.
+
+    Raises:
+        TypeError: If ``model`` is not a supported model instance.
     """
     if isinstance(model, LlamaLM):
         return forward_llama(model, input_ids, cache, return_cache, deterministic, key)
-    return forward_megalodon(model, input_ids, cache, return_cache, deterministic, key)
+    if isinstance(model, MegalodonForCausalLM):
+        return forward_megalodon(model, input_ids, cache, return_cache, deterministic, key)
+    raise TypeError(f"Unsupported model type: {type(model).__name__}")
 
 
 __all__ = [

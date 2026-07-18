@@ -1,0 +1,61 @@
+# Reduced-width Megalodon using the released 7B paper ratios where they scale cleanly.
+run_dir: runs/paper_scaled_megalodon
+model: megalodon
+comparison_basis: paper_scaled_width_depth
+
+# Architecture: d=384 and L=6 are the inherited small-model scale. The internal
+# ratios follow Megalodon-7B/released presets rather than parameter matching.
+num_tokens: 256
+model_dim: 384
+num_layers: 6
+num_heads: 1
+z_dim: 96
+value_dim: 768
+ffn_hidden_dim: 768
+cema_ndim: 16
+chunk_size: 512
+norm_num_groups: 12
+swiglu: true
+rescale_nffn: false
+scale_emb: false
+share_emb: false
+init_mode: he
+rope_base: 100000.0
+attention_dropout: 0.0
+hidden_dropout: 0.0
+dropout: 0.0
+use_checkpoint: false
+
+# Precision policy
+param_dtype: fp32
+compute_dtype: bf16
+accum_dtype: fp32
+attention_softmax_dtype: fp32
+loss_softmax_dtype: fp32
+jit: true
+
+# Paper optimizer, scaled to the 1,200-update exploratory horizon. Six warmup
+# updates preserve the paper's 2,500 / 500,000 = 0.5% warmup fraction. The peak
+# rate was selected on seed 101 by the documented equal-budget pilot.
+num_batches: 1200
+batch_size: 128
+grad_accum_every: 1
+optimizer: adamw
+learning_rate: 0.002
+lr_schedule: warmup_cosine
+warmup_steps: 6
+min_learning_rate_ratio: 0.0
+adam_beta1: 0.9
+adam_beta2: 0.95
+adam_eps: 1.0e-8
+weight_decay: 0.1
+grad_clip_norm: 1.0
+
+# Data and evaluation
+data_path: data/enwik8.gz
+seq_len: 512
+validate_every: 100
+val_batch_size: 100
+val_batches: 1
+
+seed: 7

@@ -1,0 +1,45 @@
+# Twice-horizon extension of llama2_paper_scaled_512.yaml.
+run_dir: runs/paper_scaled_llama2_2400
+model: llama
+comparison_basis: paper_scaled_width_depth
+
+num_tokens: 256
+dim: 384
+depth: 6
+heads: 3
+dim_head: 128
+ffn_hidden_dim: 1024
+share_emb: false
+rope_theta: 10000.0
+init_std: 0.02
+
+param_dtype: fp32
+compute_dtype: bf16
+accum_dtype: fp32
+attention_softmax_dtype: fp32
+loss_softmax_dtype: fp32
+jit: true
+
+# Keep the locked peak rate and the paper's 0.5% warmup fraction while
+# extending cosine decay to twice the primary token horizon.
+num_batches: 2400
+batch_size: 128
+grad_accum_every: 1
+optimizer: adamw
+learning_rate: 0.0007
+lr_schedule: warmup_cosine
+warmup_steps: 12
+min_learning_rate_ratio: 0.0
+adam_beta1: 0.9
+adam_beta2: 0.95
+adam_eps: 1.0e-8
+weight_decay: 0.1
+grad_clip_norm: 1.0
+
+data_path: data/enwik8.gz
+seq_len: 512
+validate_every: 100
+val_batch_size: 100
+val_batches: 1
+
+seed: 7
