@@ -12,7 +12,56 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from megalodon_enwik8_jax.utils import load_config, validate_config
+
 DEFAULT_SEEDS = (7, 17, 42)
+SHARED_CONFIG_KEYS = (
+    "num_tokens",
+    "param_dtype",
+    "compute_dtype",
+    "accum_dtype",
+    "attention_softmax_dtype",
+    "loss_softmax_dtype",
+    "jit",
+    "num_batches",
+    "batch_size",
+    "grad_accum_every",
+    "lr_schedule",
+    "warmup_steps",
+    "adam_beta1",
+    "adam_beta2",
+    "adam_eps",
+    "weight_decay",
+    "grad_clip_norm",
+    "data_path",
+    "seq_len",
+    "validate_every",
+    "val_batch_size",
+    "val_batches",
+)
+
+
+def _validate_pair(config_paths: dict[str, Path]) -> None:
+    """Require the paired configs to identify their models and share one protocol."""
+    configs: dict[str, dict[str, Any]] = {}
+    for expected_model, path in config_paths.items():
+        config = validate_config(load_config(path))
+        actual_model = config["model"]
+        if actual_model != expected_model:
+            raise ValueError(f"{path} declares model '{actual_model}', expected '{expected_model}'")
+        configs[expected_model] = config
+
+    mismatches = [
+        key
+        for key in SHARED_CONFIG_KEYS
+        if configs["megalodon"].get(key) != configs["llama"].get(key)
+    ]
+    if mismatches:
+        details = ", ".join(
+            f"{key} ({configs['megalodon'].get(key)!r} != {configs['llama'].get(key)!r})"
+            for key in mismatches
+        )
+        raise ValueError(f"Comparison configs differ on shared settings: {details}")
 
 
 def _run_one(config: Path, run_dir: Path, seed: int) -> None:
@@ -137,12 +186,15 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
     config_paths = {
         "megalodon": Path(args.megalodon_config),
         "llama": Path(args.llama_config),
     }
+    if not args.aggregate_only:
+        _validate_pair(config_paths)
+
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
     seeds = tuple(args.seeds)
     if not args.aggregate_only:
         for index, seed in enumerate(seeds):

@@ -8,9 +8,12 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 import compare
 from compare import _aggregate
+
+CONFIG_DIR = Path(__file__).resolve().parents[1] / "configs"
 
 
 def test_main_runs_or_aggregates_only_and_writes_summary(
@@ -55,6 +58,51 @@ def test_main_runs_or_aggregates_only_and_writes_summary(
 
     assert calls == []
     assert json.loads((output_dir / "comparison.json").read_text()) == {"seeds": [7, 17]}
+
+
+@pytest.mark.parametrize("invalid_pair", ["swapped", "batch_size"], ids=str)
+def test_main_rejects_invalid_pair_before_launch(
+    invalid_pair: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Model identity and shared-protocol errors fail before creating run output."""
+    megalodon_path = CONFIG_DIR / "megalodon_paper_scaled_512.yaml"
+    llama_path = CONFIG_DIR / "llama2_paper_scaled_512.yaml"
+    expected_error = "expected 'megalodon'"
+    if invalid_pair == "swapped":
+        megalodon_path = llama_path
+    else:
+        llama_config = yaml.safe_load(llama_path.read_text())
+        llama_config["batch_size"] = 64
+        llama_path = tmp_path / "mismatched_llama.yaml"
+        llama_path.write_text(yaml.safe_dump(llama_config))
+        expected_error = "batch_size"
+
+    output_dir = tmp_path / "runs"
+    monkeypatch.setattr(
+        compare,
+        "_run_one",
+        lambda *args: pytest.fail("training launched before config validation"),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "compare.py",
+            "--megalodon-config",
+            str(megalodon_path),
+            "--llama-config",
+            str(llama_path),
+            "--output-dir",
+            str(output_dir),
+        ],
+    )
+
+    with pytest.raises(ValueError, match=expected_error):
+        compare.main()
+
+    assert not output_dir.exists()
 
 
 def test_aggregate_reports_per_seed_and_paired_statistics(tmp_path: Path) -> None:
