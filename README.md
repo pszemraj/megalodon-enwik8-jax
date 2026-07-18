@@ -37,6 +37,8 @@ XLA_PYTHON_CLIENT_PREALLOCATE=false python compare.py
 
 The default runner uses seeds 7, 17, and 42 in alternating model order. It writes model artifacts, per-run metrics, and `comparison.json` under the ignored `runs/paper_scaled_enwik8_1200/` directory.
 
+If all runs completed but `comparison.json` needs to be regenerated, rerun the same command with `--aggregate-only` to read the existing per-run summaries without launching training again.
+
 The twice-horizon extension uses the same selected peak rates with a 12-update warmup and fresh cosine schedule:
 
 ```bash

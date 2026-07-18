@@ -13,10 +13,10 @@ import compare
 from compare import _aggregate
 
 
-def test_main_alternates_model_order_and_writes_summary(
+def test_main_runs_or_aggregates_only_and_writes_summary(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The runner alternates launch order and writes under the ignored output tree."""
+    """The runner alternates launches and can rebuild only the aggregate summary."""
     calls: list[tuple[str, int]] = []
 
     def fake_run(config: Path, run_dir: Path, seed: int) -> None:
@@ -46,6 +46,14 @@ def test_main_alternates_model_order_and_writes_summary(
         ("llama", 17),
         ("megalodon", 17),
     ]
+    assert json.loads((output_dir / "comparison.json").read_text()) == {"seeds": [7, 17]}
+
+    calls.clear()
+    monkeypatch.setattr(sys, "argv", [*sys.argv, "--aggregate-only"])
+
+    compare.main()
+
+    assert calls == []
     assert json.loads((output_dir / "comparison.json").read_text()) == {"seeds": [7, 17]}
 
 

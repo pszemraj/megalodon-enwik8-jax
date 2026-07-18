@@ -130,6 +130,11 @@ def main() -> None:
     parser.add_argument("--llama-config", default="configs/llama2_paper_scaled_512.yaml")
     parser.add_argument("--output-dir", default="runs/paper_scaled_enwik8_1200")
     parser.add_argument("--seeds", type=int, nargs="+", default=list(DEFAULT_SEEDS))
+    parser.add_argument(
+        "--aggregate-only",
+        action="store_true",
+        help="Rebuild comparison.json from existing per-run summaries",
+    )
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -139,10 +144,11 @@ def main() -> None:
         "llama": Path(args.llama_config),
     }
     seeds = tuple(args.seeds)
-    for index, seed in enumerate(seeds):
-        order = ("megalodon", "llama") if index % 2 == 0 else ("llama", "megalodon")
-        for model in order:
-            _run_one(config_paths[model], output_dir / f"seed_{seed}" / model, seed)
+    if not args.aggregate_only:
+        for index, seed in enumerate(seeds):
+            order = ("megalodon", "llama") if index % 2 == 0 else ("llama", "megalodon")
+            for model in order:
+                _run_one(config_paths[model], output_dir / f"seed_{seed}" / model, seed)
 
     result = _aggregate(output_dir, seeds)
     results_path = output_dir / "comparison.json"
