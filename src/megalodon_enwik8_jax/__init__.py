@@ -9,8 +9,9 @@ except ImportError:
 
 from .models import LlamaLM, build_model, forward_model
 from .utils import (
-    apply_min_p,
     apply_temperature,
+    apply_top_k,
+    apply_top_p,
     decode_tokens,
     encode_prompt,
     generate,
@@ -34,7 +35,8 @@ __all__ = [
     "forward_model",
     # Sampling
     "apply_temperature",
-    "apply_min_p",
+    "apply_top_k",
+    "apply_top_p",
     "sample_token",
     "generate",
 ]

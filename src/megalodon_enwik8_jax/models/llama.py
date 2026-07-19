@@ -27,7 +27,16 @@ def _linear_3d(
     x: Array,
     compute_dtype: jnp.dtype,
 ) -> Array:
-    """Apply a Linear layer over [B, T, D] with explicit compute dtype."""
+    """Apply a linear layer over a batched sequence.
+
+    Args:
+        linear: Linear projection to apply.
+        x: Input array with shape ``[batch, sequence, input_dim]``.
+        compute_dtype: Data type used for the projection computation.
+
+    Returns:
+        Projected array with shape ``[batch, sequence, output_dim]``.
+    """
     x_cast = x.astype(compute_dtype)
     weight = linear.weight.astype(compute_dtype)
     y = jnp.einsum("btd,od->bto", x_cast, weight, preferred_element_type=jnp.float32)
@@ -37,7 +46,15 @@ def _linear_3d(
 
 
 def _resolve_compute_dtype(cfg: dict[str, Any]) -> jnp.dtype:
-    """Resolve compute dtype from config values."""
+    """Resolve the configured compute data type.
+
+    Args:
+        cfg: Model configuration containing ``compute_dtype`` or the legacy
+            ``dtype`` key.
+
+    Returns:
+        The corresponding JAX data type.
+    """
     value = cfg.get("compute_dtype", cfg.get("dtype", "bf16"))
     if isinstance(value, str):
         val = value.lower()
@@ -53,36 +70,21 @@ def _resolve_compute_dtype(cfg: dict[str, Any]) -> jnp.dtype:
     raise ValueError(f"compute_dtype must be bf16/fp32 or a JAX dtype, got '{value}'")
 
 
-def _init_linear(linear: eqx.nn.Linear, key: jax.Array) -> eqx.nn.Linear:
-    """Match PyTorch nn.Linear default init (kaiming_uniform with a=sqrt(5))."""
-    key_w, key_b = jax.random.split(key)
-    fan_in = linear.weight.shape[1]
-    bound = jnp.asarray(1.0 / jnp.sqrt(fan_in), dtype=linear.weight.dtype)
-    weight = jax.random.uniform(
-        key_w,
-        linear.weight.shape,
-        minval=-bound,
-        maxval=bound,
-        dtype=linear.weight.dtype,
-    )
-    if linear.bias is None:
-        return eqx.tree_at(lambda layer: layer.weight, linear, weight)
-    bias = jax.random.uniform(
-        key_b,
-        linear.bias.shape,
-        minval=-bound,
-        maxval=bound,
-        dtype=linear.bias.dtype,
-    )
-    return eqx.tree_at(lambda layer: (layer.weight, layer.bias), linear, (weight, bias))
-
-
 def _init_linear_normal(
     linear: eqx.nn.Linear,
     key: jax.Array,
     std: float,
 ) -> eqx.nn.Linear:
-    """Initialize linear weights with N(0, std) like PyTorch Llama to_logits."""
+    """Initialize a linear layer with normally distributed weights.
+
+    Args:
+        linear: Linear layer whose weights are replaced.
+        key: PRNG key used to sample weights.
+        std: Standard deviation of the normal distribution.
+
+    Returns:
+        A copy of ``linear`` with weights sampled from ``N(0, std)``.
+    """
     weight = jax.random.normal(key, linear.weight.shape, dtype=linear.weight.dtype) * std
     return eqx.tree_at(lambda layer: layer.weight, linear, weight)
 
@@ -96,21 +98,14 @@ class LlamaConfig:
     depth: int = 6
     heads: int = 6
     dim_head: int = 64
-    ffn_dim_multiplier: float = 2.67
-    ffn_multiple_of: int = 256  # Round FFN hidden dim to multiple of this
+    ffn_hidden_dim: int = 1088
     max_seq_len: int = 2048
     rope_theta: float = 10000.0
     norm_eps: float = 1e-5
-    tied_embedding: bool = True
+    share_emb: bool = False
     embed_init_std: float = 0.02  # Embedding initialization std
+    init_std: float = 0.02
     compute_dtype: jnp.dtype = jnp.float32  # Dtype for matmul/activation compute
-
-    @property
-    def ffn_hidden_dim(self) -> int:
-        """Compute FFN hidden dimension, rounded to multiple_of."""
-        hidden = int(self.ffn_dim_multiplier * self.dim)
-        # Round to nearest multiple_of
-        return self.ffn_multiple_of * ((hidden + self.ffn_multiple_of - 1) // self.ffn_multiple_of)
 
 
 class RMSNorm(eqx.Module):
@@ -225,8 +220,6 @@ class CausalSelfAttention(eqx.Module):
     wk: eqx.nn.Linear
     wv: eqx.nn.Linear
     wo: eqx.nn.Linear
-    cos: Array
-    sin: Array
     num_heads: int = eqx.field(static=True)
     head_dim: int = eqx.field(static=True)
     compute_dtype: jnp.dtype = eqx.field(static=True)
@@ -236,9 +229,8 @@ class CausalSelfAttention(eqx.Module):
         dim: int,
         num_heads: int,
         head_dim: int,
-        max_seq_len: int = 2048,
-        rope_theta: float = 10000.0,
         compute_dtype: jnp.dtype = jnp.float32,
+        init_std: float = 0.02,
         *,
         key: jax.Array,
     ):
@@ -248,9 +240,8 @@ class CausalSelfAttention(eqx.Module):
             dim: Model dimension.
             num_heads: Number of attention heads.
             head_dim: Dimension per head.
-            max_seq_len: Maximum sequence length for RoPE.
-            rope_theta: RoPE theta parameter.
             compute_dtype: Dtype for matmul/activation compute.
+            init_std: Standard deviation for Gaussian initialization.
             key: PRNG key.
         """
         self.num_heads = num_heads
@@ -263,17 +254,16 @@ class CausalSelfAttention(eqx.Module):
         self.wk = eqx.nn.Linear(dim, inner_dim, use_bias=False, key=keys[1])
         self.wv = eqx.nn.Linear(dim, inner_dim, use_bias=False, key=keys[2])
         self.wo = eqx.nn.Linear(inner_dim, dim, use_bias=False, key=keys[3])
-        self.wq = _init_linear(self.wq, keys[0])
-        self.wk = _init_linear(self.wk, keys[1])
-        self.wv = _init_linear(self.wv, keys[2])
-        self.wo = _init_linear(self.wo, keys[3])
-
-        # Precompute rotary embeddings
-        self.cos, self.sin = precompute_freqs_cis(head_dim, max_seq_len, rope_theta)
+        self.wq = _init_linear_normal(self.wq, keys[0], init_std)
+        self.wk = _init_linear_normal(self.wk, keys[1], init_std)
+        self.wv = _init_linear_normal(self.wv, keys[2], init_std)
+        self.wo = _init_linear_normal(self.wo, keys[3], init_std)
 
     def __call__(
         self,
         x: Array,
+        cos: Array,
+        sin: Array,
         cache: tuple[Array, Array] | None = None,
         return_cache: bool = False,
     ) -> tuple[Array, tuple[Array, Array] | None]:
@@ -281,6 +271,8 @@ class CausalSelfAttention(eqx.Module):
 
         Args:
             x: Input tensor of shape [B, T, D].
+            cos: Shared cosine RoPE table.
+            sin: Shared sine RoPE table.
             cache: Optional KV cache tuple (k_cache, v_cache).
             return_cache: Whether to return updated cache.
 
@@ -306,8 +298,8 @@ class CausalSelfAttention(eqx.Module):
         else:
             offset = 0
 
-        q = apply_rotary_emb(q, self.cos, self.sin, offset)
-        k = apply_rotary_emb(k, self.cos, self.sin, offset)
+        q = apply_rotary_emb(q, cos, sin, offset)
+        k = apply_rotary_emb(k, cos, sin, offset)
 
         # Update KV cache
         if cache is not None:
@@ -325,11 +317,9 @@ class CausalSelfAttention(eqx.Module):
 
         # Causal mask
         q_len, kv_len = q.shape[2], k.shape[2]
-        # Create causal mask: position i can attend to positions <= i
-        # For cached generation, we need to account for the offset
-        causal_mask = jnp.tril(jnp.ones((kv_len, kv_len), dtype=bool))
-        # Only take the last q_len rows (for generation with cache)
-        causal_mask = causal_mask[-q_len:, :]
+        query_positions = jnp.arange(q_len)[:, None] + (kv_len - q_len)
+        key_positions = jnp.arange(kv_len)[None, :]
+        causal_mask = key_positions <= query_positions
         attn_weights = jnp.where(causal_mask, attn_weights, -jnp.inf)
 
         attn_probs = jax.nn.softmax(attn_weights, axis=-1).astype(x.dtype)
@@ -356,22 +346,31 @@ class SwiGLU(eqx.Module):
     w3: eqx.nn.Linear  # Up projection
     compute_dtype: jnp.dtype = eqx.field(static=True)
 
-    def __init__(self, dim: int, hidden_dim: int, compute_dtype: jnp.dtype, *, key: jax.Array):
+    def __init__(
+        self,
+        dim: int,
+        hidden_dim: int,
+        compute_dtype: jnp.dtype,
+        init_std: float = 0.02,
+        *,
+        key: jax.Array,
+    ):
         """Initialize SwiGLU.
 
         Args:
             dim: Input/output dimension.
             hidden_dim: Hidden dimension.
             compute_dtype: Dtype for matmul/activation compute.
+            init_std: Standard deviation for Gaussian initialization.
             key: PRNG key.
         """
         keys = jax.random.split(key, 3)
         self.w1 = eqx.nn.Linear(dim, hidden_dim, use_bias=False, key=keys[0])
         self.w2 = eqx.nn.Linear(hidden_dim, dim, use_bias=False, key=keys[1])
         self.w3 = eqx.nn.Linear(dim, hidden_dim, use_bias=False, key=keys[2])
-        self.w1 = _init_linear(self.w1, keys[0])
-        self.w2 = _init_linear(self.w2, keys[1])
-        self.w3 = _init_linear(self.w3, keys[2])
+        self.w1 = _init_linear_normal(self.w1, keys[0], init_std)
+        self.w2 = _init_linear_normal(self.w2, keys[1], init_std)
+        self.w3 = _init_linear_normal(self.w3, keys[2], init_std)
         self.compute_dtype = compute_dtype
 
     def __call__(self, x: Array) -> Array:
@@ -402,10 +401,9 @@ class TransformerBlock(eqx.Module):
         num_heads: int,
         head_dim: int,
         ffn_hidden_dim: int,
-        max_seq_len: int = 2048,
-        rope_theta: float = 10000.0,
         norm_eps: float = 1e-5,
         compute_dtype: jnp.dtype = jnp.float32,
+        init_std: float = 0.02,
         *,
         key: jax.Array,
     ):
@@ -416,10 +414,9 @@ class TransformerBlock(eqx.Module):
             num_heads: Number of attention heads.
             head_dim: Dimension per head.
             ffn_hidden_dim: FFN hidden dimension.
-            max_seq_len: Maximum sequence length.
-            rope_theta: RoPE theta.
             norm_eps: RMSNorm epsilon.
             compute_dtype: Dtype for matmul/activation compute.
+            init_std: Standard deviation for Gaussian initialization.
             key: PRNG key.
         """
         keys = jax.random.split(key, 4)
@@ -429,9 +426,8 @@ class TransformerBlock(eqx.Module):
             dim=dim,
             num_heads=num_heads,
             head_dim=head_dim,
-            max_seq_len=max_seq_len,
-            rope_theta=rope_theta,
             compute_dtype=compute_dtype,
+            init_std=init_std,
             key=keys[1],
         )
         self.ff_norm = RMSNorm(dim, eps=norm_eps, key=keys[2])
@@ -439,12 +435,15 @@ class TransformerBlock(eqx.Module):
             dim=dim,
             hidden_dim=ffn_hidden_dim,
             compute_dtype=compute_dtype,
+            init_std=init_std,
             key=keys[3],
         )
 
     def __call__(
         self,
         x: Array,
+        cos: Array,
+        sin: Array,
         cache: tuple[Array, Array] | None = None,
         return_cache: bool = False,
     ) -> tuple[Array, tuple[Array, Array] | None]:
@@ -452,6 +451,8 @@ class TransformerBlock(eqx.Module):
 
         Args:
             x: Input tensor of shape [B, T, D].
+            cos: Shared cosine RoPE table.
+            sin: Shared sine RoPE table.
             cache: Optional KV cache.
             return_cache: Whether to return cache.
 
@@ -460,7 +461,13 @@ class TransformerBlock(eqx.Module):
         """
         # Attention with residual
         normed = jax.vmap(self.attn_norm)(x)
-        attn_out, new_cache = self.attn(normed, cache=cache, return_cache=return_cache)
+        attn_out, new_cache = self.attn(
+            normed,
+            cos,
+            sin,
+            cache=cache,
+            return_cache=return_cache,
+        )
         x = x + attn_out
 
         # FFN with residual
@@ -504,10 +511,9 @@ class LlamaLM(eqx.Module):
                 num_heads=config.heads,
                 head_dim=config.dim_head,
                 ffn_hidden_dim=config.ffn_hidden_dim,
-                max_seq_len=config.max_seq_len,
-                rope_theta=config.rope_theta,
                 norm_eps=config.norm_eps,
                 compute_dtype=config.compute_dtype,
+                init_std=config.init_std,
                 key=keys[i + 1],
             )
             for i in range(config.depth)
@@ -517,7 +523,7 @@ class LlamaLM(eqx.Module):
         self.norm = RMSNorm(config.dim, eps=config.norm_eps, key=keys[-2])
 
         # Output projection (or None for tied embeddings)
-        if config.tied_embedding:
+        if config.share_emb:
             self.lm_head = None
         else:
             lm_head = eqx.nn.Linear(config.dim, config.vocab_size, use_bias=False, key=keys[-1])
@@ -551,11 +557,23 @@ class LlamaLM(eqx.Module):
         x = self.embed.weight[input_ids]
         x = x.astype(self.config.compute_dtype)
 
+        cos, sin = precompute_freqs_cis(
+            self.config.dim_head,
+            self.config.max_seq_len,
+            self.config.rope_theta,
+        )
+
         # Apply transformer blocks
         new_caches = [] if return_cache else None
         for i, layer in enumerate(self.layers):
             layer_cache = cache[i] if cache is not None else None
-            x, layer_new_cache = layer(x, cache=layer_cache, return_cache=return_cache)
+            x, layer_new_cache = layer(
+                x,
+                cos,
+                sin,
+                cache=layer_cache,
+                return_cache=return_cache,
+            )
             if return_cache:
                 new_caches.append(layer_new_cache)
 
@@ -564,13 +582,20 @@ class LlamaLM(eqx.Module):
 
         # Compute logits
         if self.lm_head is not None:
-            logits = _linear_3d(self.lm_head, x, self.config.compute_dtype)
+            logits = jnp.einsum(
+                "btd,vd->btv",
+                x.astype(jnp.float32),
+                self.lm_head.weight.astype(jnp.float32),
+                preferred_element_type=jnp.float32,
+            )
         else:
             # Tied embeddings: logits = x @ embed.weight.T
-            weight = self.embed.weight.astype(self.config.compute_dtype)
             logits = jnp.einsum(
-                "btd,vd->btv", x, weight, preferred_element_type=jnp.float32
-            ).astype(x.dtype)
+                "btd,vd->btv",
+                x.astype(jnp.float32),
+                self.embed.weight.astype(jnp.float32),
+                preferred_element_type=jnp.float32,
+            )
 
         return logits, new_caches
 
@@ -591,11 +616,12 @@ def build_llama(cfg: dict[str, Any], key: jax.Array) -> LlamaLM:
         depth=cfg.get("depth", 6),
         heads=cfg.get("heads", 6),
         dim_head=cfg.get("dim_head", 64),
-        ffn_dim_multiplier=cfg.get("ffn_dim_multiplier", 2.67),
+        ffn_hidden_dim=cfg.get("ffn_hidden_dim", 1088),
         max_seq_len=cfg.get("seq_len", 512) * 2,  # Allow generation beyond training length
         rope_theta=cfg.get("rope_theta", 10000.0),
         norm_eps=cfg.get("norm_eps", 1e-5),
-        tied_embedding=cfg.get("tied_embedding", True),
+        share_emb=cfg.get("share_emb", False),
+        init_std=cfg.get("init_std", 0.02),
         compute_dtype=_resolve_compute_dtype(cfg),
     )
     return LlamaLM(config, key=key)

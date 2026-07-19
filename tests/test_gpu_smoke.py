@@ -21,13 +21,17 @@ def _tiny_config() -> dict[str, Any]:
     return {
         "model": "llama",
         "num_tokens": 256,
-        "dtype": "bf16",
+        "param_dtype": "fp32",
+        "compute_dtype": "bf16",
+        "accum_dtype": "fp32",
+        "attention_softmax_dtype": "fp32",
+        "loss_softmax_dtype": "fp32",
         "dim": 32,
         "depth": 1,
         "heads": 1,
         "dim_head": 32,
-        "ffn_dim_multiplier": 2.0,
-        "tied_embedding": True,
+        "ffn_hidden_dim": 64,
+        "share_emb": False,
         "seq_len": 8,
         "batch_size": 1,
         "grad_accum_every": 1,
@@ -38,12 +42,6 @@ def _tiny_config() -> dict[str, Any]:
         "data_path": "data/enwik8.gz",
         "validate_every": 100,
         "val_batches": 2,
-        "generate_every": 100,
-        "generate_prompt_len": 8,
-        "generate_length": 8,
-        "save_every": 500,
-        "temperature": 1.0,
-        "min_p": 0.1,
     }
 
 
@@ -66,7 +64,7 @@ def test_generate_uses_gpu(gpu_device: jax.Device) -> None:
         key = jax.random.PRNGKey(0)
         model = build_model(_tiny_config(), key)
         prompt_ids = jax.random.randint(key, (1, 4), 0, 256)
-        generated = generate(
+        generated, _, _ = generate(
             model,
             prompt_ids,
             max_new_tokens=2,

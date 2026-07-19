@@ -3,14 +3,8 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Generator
 from typing import Any
-
-_TRITON_FLAG = "--xla_gpu_enable_triton_gemm=false"
-_xla_flags = os.environ.get("XLA_FLAGS", "")
-if _TRITON_FLAG not in _xla_flags:
-    os.environ["XLA_FLAGS"] = f"{_xla_flags} {_TRITON_FLAG}".strip()
 
 import jax
 import jax.numpy as jnp
@@ -77,13 +71,17 @@ def test_config() -> dict[str, Any]:
     return {
         "model": "llama",
         "num_tokens": 256,
-        "dtype": "bf16",
+        "param_dtype": "fp32",
+        "compute_dtype": "bf16",
+        "accum_dtype": "fp32",
+        "attention_softmax_dtype": "fp32",
+        "loss_softmax_dtype": "fp32",
         "dim": 64,
         "depth": 2,
         "heads": 2,
         "dim_head": 32,
-        "ffn_dim_multiplier": 2.0,
-        "tied_embedding": True,
+        "ffn_hidden_dim": 128,
+        "share_emb": False,
         "seq_len": 32,
         "batch_size": 2,
         "grad_accum_every": 1,
@@ -94,12 +92,6 @@ def test_config() -> dict[str, Any]:
         "data_path": "data/enwik8.gz",
         "validate_every": 100,
         "val_batches": 2,
-        "generate_every": 100,
-        "generate_prompt_len": 16,
-        "generate_length": 16,
-        "save_every": 500,
-        "temperature": 1.0,
-        "min_p": 0.1,
     }
 
 
@@ -109,7 +101,11 @@ def megalodon_config() -> dict[str, Any]:
     return {
         "model": "megalodon",
         "num_tokens": 256,
-        "dtype": "bf16",
+        "param_dtype": "fp32",
+        "compute_dtype": "bf16",
+        "accum_dtype": "fp32",
+        "attention_softmax_dtype": "fp32",
+        "loss_softmax_dtype": "fp32",
         "model_dim": 64,
         "num_layers": 2,
         "num_heads": 2,
@@ -129,10 +125,4 @@ def megalodon_config() -> dict[str, Any]:
         "data_path": "data/enwik8.gz",
         "validate_every": 100,
         "val_batches": 2,
-        "generate_every": 100,
-        "generate_prompt_len": 16,
-        "generate_length": 16,
-        "save_every": 500,
-        "temperature": 1.0,
-        "min_p": 0.1,
     }

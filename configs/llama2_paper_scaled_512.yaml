@@ -1,0 +1,45 @@
+# Reduced-width Llama 2 baseline at the same d=384, L=6 scale as Megalodon.
+run_dir: runs/paper_scaled_llama2
+model: llama
+
+# Architecture: retain Llama 2's 128-wide heads and rounded 8d/3 SwiGLU width.
+num_tokens: 256
+dim: 384
+depth: 6
+heads: 3
+dim_head: 128
+ffn_hidden_dim: 1024
+share_emb: false
+rope_theta: 10000.0
+init_std: 0.02
+
+# Precision policy
+param_dtype: fp32
+compute_dtype: bf16
+accum_dtype: fp32
+attention_softmax_dtype: fp32
+loss_softmax_dtype: fp32
+jit: true
+
+# Give the baseline the same paper optimizer family and schedule. The peak rate
+# was selected independently on seed 101 with the identical pilot budget.
+num_batches: 1200
+batch_size: 128
+grad_accum_every: 1
+learning_rate: 0.0007
+lr_schedule: warmup_cosine
+warmup_steps: 6
+adam_beta1: 0.9
+adam_beta2: 0.95
+adam_eps: 1.0e-8
+weight_decay: 0.1
+grad_clip_norm: 1.0
+
+# Data and evaluation
+data_path: data/enwik8.gz
+seq_len: 512
+validate_every: 100
+val_batch_size: 100
+val_batches: 1
+
+seed: 7

@@ -6,9 +6,10 @@ from typing import Any
 
 import jax
 import jax.numpy as jnp
+import pytest
 
 from megalodon_enwik8_jax.models import build_model, forward_model
-from megalodon_enwik8_jax.utils import count_trainable_params, make_trainable_mask
+from megalodon_enwik8_jax.utils import count_trainable_params, load_config, make_trainable_mask
 
 
 def count_params(model: object) -> int:
@@ -62,8 +63,31 @@ class TestLlamaModel:
 
         logits, _ = forward_model(model, input_ids)
 
-        # Logits should be a float dtype (bf16 on GPU, fp32 on CPU)
-        assert jnp.issubdtype(logits.dtype, jnp.floating)
+        assert logits.dtype == jnp.float32
+
+    def test_llama_gaussian_initialization_is_explicit(
+        self, key: jax.Array, test_config: dict[str, Any]
+    ) -> None:
+        """The Llama baseline consistently uses its declared Gaussian scale."""
+        model = build_model({**test_config, "init_std": 0.01}, key)
+
+        observed_std = float(model.layers[0].attn.wq.weight.std())
+        assert observed_std == pytest.approx(0.01, rel=0.1)
+
+    def test_llama_cached_logits_match_full_forward(
+        self,
+        key: jax.Array,
+        test_config: dict[str, Any],
+    ) -> None:
+        """Cached continuation matches the corresponding full-forward logits."""
+        model = build_model(test_config, key)
+        tokens = jnp.array([[1, 2, 3, 4]], dtype=jnp.int32)
+
+        full_logits, _ = forward_model(model, tokens)
+        _, cache = forward_model(model, tokens[:, :-1], return_cache=True)
+        cached_logits, _ = forward_model(model, tokens[:, -1:], cache=cache, return_cache=True)
+
+        assert jnp.allclose(cached_logits[:, 0], full_logits[:, -1], atol=2e-2, rtol=2e-2)
 
 
 class TestMegalodonModel:
@@ -83,6 +107,35 @@ class TestMegalodonModel:
         logits, cache = forward_model(model, input_ids)
 
         assert logits.shape == (batch_size, seq_len, 256)
+
+    def test_megalodon_supports_partial_final_chunk(
+        self,
+        key: jax.Array,
+        megalodon_config: dict[str, Any],
+    ) -> None:
+        """Sequences need not be an exact multiple of chunk_size in v0.2."""
+        model = build_model(megalodon_config, key)
+        input_ids = jax.random.randint(key, (1, 40), 0, 256)
+
+        logits, _ = forward_model(model, input_ids)
+
+        assert logits.shape == (1, 40, 256)
+        assert logits.dtype == jnp.float32
+
+    def test_megalodon_cached_logits_match_full_forward(
+        self,
+        key: jax.Array,
+        megalodon_config: dict[str, Any],
+    ) -> None:
+        """Cached continuation matches full forward inside one chunk."""
+        model = build_model(megalodon_config, key)
+        tokens = jnp.array([[1, 2, 3, 4]], dtype=jnp.int32)
+
+        full_logits, _ = forward_model(model, tokens)
+        _, cache = forward_model(model, tokens[:, :-1], return_cache=True)
+        cached_logits, _ = forward_model(model, tokens[:, -1:], cache=cache, return_cache=True)
+
+        assert jnp.allclose(cached_logits[:, 0], full_logits[:, -1], atol=2e-2, rtol=2e-2)
 
     def test_megalodon_forward_with_cache(
         self,
@@ -153,3 +206,30 @@ class TestModelInterface:
         logits2, _ = forward_model(model, input_ids, deterministic=True)
 
         assert jnp.allclose(logits1, logits2)
+
+    def test_forward_model_rejects_unknown_model(self) -> None:
+        """forward_model reports unsupported model objects."""
+        input_ids = jnp.zeros((1, 1), dtype=jnp.int32)
+
+        with pytest.raises(TypeError, match="Unsupported model type: object"):
+            forward_model(object(), input_ids)
+
+    @pytest.mark.parametrize(
+        ("config_path", "expected_params"),
+        [
+            ("configs/megalodon_paper_scaled_512.yaml", 12_098_112),
+            ("configs/llama2_paper_scaled_512.yaml", 10_818_432),
+            ("configs/megalodon_paper_scaled_512_long.yaml", 12_098_112),
+            ("configs/llama2_paper_scaled_512_long.yaml", 10_818_432),
+        ],
+    )
+    def test_comparison_model_parameter_counts(
+        self,
+        key: jax.Array,
+        config_path: str,
+        expected_params: int,
+    ) -> None:
+        """The declared comparison models retain their audited parameter counts."""
+        model = build_model(load_config(config_path), key)
+
+        assert count_params(model) == expected_params

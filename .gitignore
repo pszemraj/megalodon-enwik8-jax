@@ -126,9 +126,6 @@ logs/
 jax_cache/
 .jax_cache/
 
-# Data (large files - should be downloaded separately)
-# data/  # Uncomment if you want to ignore data folder
-
 # Temporary files
 *.tmp
 *temp*

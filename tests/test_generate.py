@@ -6,9 +6,16 @@ from typing import Any
 
 import jax
 import jax.numpy as jnp
+import pytest
 
 from megalodon_enwik8_jax.models import build_model
-from megalodon_enwik8_jax.utils import apply_min_p, apply_temperature, generate, sample_token
+from megalodon_enwik8_jax.utils import (
+    apply_temperature,
+    apply_top_k,
+    apply_top_p,
+    generate,
+    sample_token,
+)
 
 
 class TestGenerate:
@@ -28,7 +35,7 @@ class TestGenerate:
         prompt_ids = jax.random.randint(key, (batch_size, prompt_len), 0, 256)
 
         key, gen_key = jax.random.split(key)
-        generated = generate(
+        generated, artifact, next_key = generate(
             model,
             prompt_ids,
             max_new_tokens=max_new_tokens,
@@ -37,6 +44,8 @@ class TestGenerate:
         )
 
         assert generated.shape == (batch_size, prompt_len + max_new_tokens)
+        assert artifact is not None
+        assert next_key is not None
 
     def test_generate_preserves_prompt(
         self,
@@ -52,7 +61,7 @@ class TestGenerate:
         prompt_ids = jax.random.randint(key, (batch_size, prompt_len), 0, 256)
 
         key, gen_key = jax.random.split(key)
-        generated = generate(
+        generated, _, _ = generate(
             model,
             prompt_ids,
             max_new_tokens=max_new_tokens,
@@ -75,7 +84,7 @@ class TestGenerate:
         prompt_ids = jax.random.randint(key, (1, 16), 0, 256)
 
         key, gen_key = jax.random.split(key)
-        generated = generate(
+        generated, _, _ = generate(
             model,
             prompt_ids,
             max_new_tokens=16,
@@ -86,24 +95,25 @@ class TestGenerate:
         assert generated.min() >= 0
         assert generated.max() <= 255
 
-    def test_generate_with_min_p(
+    def test_generate_with_top_k_and_top_p(
         self,
         key: jax.Array,
         test_config: dict[str, Any],
     ) -> None:
-        """generate works with min_p sampling."""
+        """generate supports the sampling controls shared by both models."""
         key, model_key = jax.random.split(key)
         model = build_model(test_config, model_key)
 
         prompt_ids = jax.random.randint(key, (1, 16), 0, 256)
 
         key, gen_key = jax.random.split(key)
-        generated = generate(
+        generated, _, _ = generate(
             model,
             prompt_ids,
             max_new_tokens=8,
             temperature=1.0,
-            min_p=0.1,
+            top_k=32,
+            top_p=0.9,
             key=gen_key,
         )
 
@@ -121,14 +131,14 @@ class TestGenerate:
         prompt_ids = jax.random.randint(key, (1, 16), 0, 256)
         gen_key = jax.random.PRNGKey(123)
 
-        generated1 = generate(
+        generated1, _, next_key1 = generate(
             model,
             prompt_ids,
             max_new_tokens=8,
             temperature=1.0,
             key=gen_key,
         )
-        generated2 = generate(
+        generated2, _, next_key2 = generate(
             model,
             prompt_ids,
             max_new_tokens=8,
@@ -137,6 +147,28 @@ class TestGenerate:
         )
 
         assert jnp.array_equal(generated1, generated2)
+        assert jnp.array_equal(next_key1, next_key2)
+
+    def test_generate_rejects_llama_sequence_beyond_rope_capacity(
+        self,
+        key: jax.Array,
+        test_config: dict[str, Any],
+    ) -> None:
+        """Llama generation fails clearly before overrunning its RoPE table."""
+        key, model_key = jax.random.split(key)
+        model = build_model(test_config, model_key)
+        prompt_ids = jnp.zeros((1, model.config.max_seq_len), dtype=jnp.int32)
+
+        with pytest.raises(
+            ValueError,
+            match=r"generation length 66 exceeds the RoPE capacity of 64",
+        ):
+            generate(
+                model,
+                prompt_ids,
+                max_new_tokens=2,
+                key=key,
+            )
 
 
 class TestSamplingPrimitives:
@@ -158,22 +190,33 @@ class TestSamplingPrimitives:
         scaled = apply_temperature(logits, 0.5)
         assert jnp.allclose(scaled, logits * 2.0)
 
-    def test_apply_min_p_masks_low_prob(self, key: jax.Array) -> None:
-        """min_p masks tokens below threshold."""
-        # Logits that give clear probability differences
-        logits = jnp.array([[0.0, -10.0, -10.0]])  # First token has ~100% prob
+    def test_apply_top_k_keeps_only_requested_logits(self) -> None:
+        """Top-k filtering retains exactly k logits, including across ties."""
+        logits = jnp.array(
+            [
+                [1.0, 4.0, 3.0, 2.0],
+                [1.0, 1.0, 1.0, 1.0],
+            ]
+        )
 
-        filtered = apply_min_p(logits, min_p=0.01)
+        filtered = apply_top_k(logits, top_k=2)
 
-        # Low probability tokens should be masked to -inf
-        probs = jax.nn.softmax(logits)
-        max_prob = probs.max()
-        threshold = 0.01 * max_prob
+        assert jnp.array_equal(jnp.isfinite(filtered).sum(axis=-1), jnp.array([2, 2]))
+        assert jnp.isfinite(filtered[0, 1])
+        assert jnp.isfinite(filtered[0, 2])
+        assert jnp.isfinite(filtered[1, 0])
+        assert jnp.isfinite(filtered[1, 1])
 
-        # Tokens with prob < threshold should be -inf
-        for i, prob in enumerate(probs[0]):
-            if prob < threshold:
-                assert filtered[0, i] == float("-inf")
+    def test_apply_top_p_keeps_crossing_token(self) -> None:
+        """Nucleus filtering never drops the token that crosses top_p."""
+        logits = jnp.log(jnp.array([[0.5, 0.3, 0.15, 0.05]]))
+
+        filtered = apply_top_p(logits, top_p=0.7)
+
+        assert jnp.isfinite(filtered[0, 0])
+        assert jnp.isfinite(filtered[0, 1])
+        assert not jnp.isfinite(filtered[0, 2])
+        assert not jnp.isfinite(filtered[0, 3])
 
     def test_sample_token_valid_output(self, key: jax.Array) -> None:
         """sample_token returns valid tokens."""

@@ -9,8 +9,8 @@ dim: 128
 depth: 2
 heads: 4
 dim_head: 32
-tied_embedding: true
-ffn_dim_multiplier: 2.67  # yields ~341 hidden dim
+share_emb: false
+ffn_hidden_dim: 341  # shared by both model options
 
 # Megalodon-specific (used when model: megalodon)
 model_dim: 128
@@ -18,13 +18,16 @@ num_layers: 2
 num_heads: 2
 z_dim: 64
 value_dim: 128
-ffn_hidden_dim: 341
 cema_ndim: 4
 chunk_size: 128
 norm_num_groups: 16
 
-# JAX-specific
-dtype: bf16  # bf16 or fp32 (no fp16)
+# Precision policy
+param_dtype: fp32
+compute_dtype: bf16
+accum_dtype: fp32
+attention_softmax_dtype: fp32
+loss_softmax_dtype: fp32
 jit: true
 
 # Training schedule
@@ -42,7 +45,4 @@ seq_len: 128
 # Evaluation
 validate_every: 5
 val_batches: 5
-generate_every: 1000  # Don't generate during test
-save_every: 1000  # Don't save during test
-
 seed: 7
