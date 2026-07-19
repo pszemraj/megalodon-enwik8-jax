@@ -60,7 +60,11 @@ def test_main_runs_or_aggregates_only_and_writes_summary(
     assert json.loads((output_dir / "comparison.json").read_text()) == {"seeds": [7, 17]}
 
 
-@pytest.mark.parametrize("invalid_pair", ["swapped", "batch_size"], ids=str)
+@pytest.mark.parametrize(
+    "invalid_pair",
+    ["swapped", "batch_size", "dropout", "attention_dropout", "hidden_dropout", "use_checkpoint"],
+    ids=str,
+)
 def test_main_rejects_invalid_pair_before_launch(
     invalid_pair: str,
     tmp_path: Path,
@@ -72,12 +76,18 @@ def test_main_rejects_invalid_pair_before_launch(
     expected_error = "expected 'megalodon'"
     if invalid_pair == "swapped":
         megalodon_path = llama_path
-    else:
+    elif invalid_pair == "batch_size":
         llama_config = yaml.safe_load(llama_path.read_text())
         llama_config["batch_size"] = 64
         llama_path = tmp_path / "mismatched_llama.yaml"
         llama_path.write_text(yaml.safe_dump(llama_config))
         expected_error = "batch_size"
+    else:
+        megalodon_config = yaml.safe_load(megalodon_path.read_text())
+        megalodon_config[invalid_pair] = True if invalid_pair == "use_checkpoint" else 0.1
+        megalodon_path = tmp_path / "invalid_megalodon.yaml"
+        megalodon_path.write_text(yaml.safe_dump(megalodon_config))
+        expected_error = "use_checkpoint" if invalid_pair == "use_checkpoint" else "dropout"
 
     output_dir = tmp_path / "runs"
     monkeypatch.setattr(

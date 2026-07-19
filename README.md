@@ -35,7 +35,7 @@ For NVIDIA GPU installation, install the JAX 0.10-compatible CUDA wheel appropri
 XLA_PYTHON_CLIENT_PREALLOCATE=false python compare.py
 ```
 
-The default runner uses seeds 7, 17, and 42 in alternating model order. Before launching, it verifies that each config names the expected model and that the shared training, validation, data, and precision settings match. It writes model artifacts, per-run metrics, and `comparison.json` under the ignored `runs/paper_scaled_enwik8_1200/` directory.
+The default runner uses seeds 7, 17, and 42 in alternating model order. Before launching, it verifies that each config names the expected model, that the shared training, validation, data, and precision settings match, and that dropout and activation checkpointing are disabled. It writes model artifacts, per-run metrics, and `comparison.json` under the ignored `runs/paper_scaled_enwik8_1200/` directory.
 
 If all runs completed but `comparison.json` needs to be regenerated, rerun the same command with `--aggregate-only` to read the existing per-run summaries without launching training again.
 

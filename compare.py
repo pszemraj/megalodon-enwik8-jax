@@ -51,6 +51,15 @@ def _validate_pair(config_paths: dict[str, Path]) -> None:
             raise ValueError(f"{path} declares model '{actual_model}', expected '{expected_model}'")
         configs[expected_model] = config
 
+    if any(
+        config.get(key, 0.0) != 0.0
+        for config in configs.values()
+        for key in ("dropout", "attention_dropout", "hidden_dropout")
+    ):
+        raise ValueError("Comparison configs must disable dropout.")
+    if any(config.get("use_checkpoint", False) for config in configs.values()):
+        raise ValueError("Comparison configs must disable use_checkpoint.")
+
     mismatches = [
         key
         for key in SHARED_CONFIG_KEYS
