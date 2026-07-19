@@ -119,7 +119,9 @@ def test_aggregate_reports_per_seed_and_paired_statistics(tmp_path: Path) -> Non
                 "final_validation_bpc": 1.5 + index * 0.1 + model_offset,
                 "steady_state": {
                     "step_seconds_median": 0.1 + model_offset / 10,
-                    "tokens_per_second": 1000.0 - model_offset * 100,
+                    (
+                        "tokens_per_second_aggregate" if seed == seeds[0] else "tokens_per_second"
+                    ): 1000.0 - model_offset * 100,
                 },
             }
             (run_dir / "summary.json").write_text(json.dumps(summary))

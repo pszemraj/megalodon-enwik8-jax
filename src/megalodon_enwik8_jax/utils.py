@@ -1168,7 +1168,10 @@ def load_model_artifact(
         Loaded model and validated configuration.
     """
     run_dir = Path(run_dir)
-    cfg = validate_config(load_config(run_dir / "config.yaml"))
+    cfg = load_config(run_dir / "config.yaml")
+    for metadata_key in ("comparison_basis", "optimizer", "min_learning_rate_ratio"):
+        cfg.pop(metadata_key, None)
+    cfg = validate_config(cfg)
     model_path = run_dir / ("model.safetensors" if cfg["model"] == "megalodon" else "model.eqx")
 
     if cfg["model"] == "megalodon":

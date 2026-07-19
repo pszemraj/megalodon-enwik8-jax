@@ -120,12 +120,15 @@ def _aggregate(output_dir: Path, seeds: tuple[int, ...]) -> dict[str, Any]:
         for model in ("megalodon", "llama"):
             with open(output_dir / f"seed_{seed}" / model / "summary.json") as file:
                 summary = json.load(file)
+            steady_state = summary["steady_state"]
+            if "tokens_per_second" not in steady_state:
+                steady_state["tokens_per_second"] = steady_state["tokens_per_second_aggregate"]
             summaries[model].append(summary)
             pair[model] = {
                 "validation_loss": summary["final_validation_loss"],
                 "validation_bpc": summary["final_validation_bpc"],
-                "step_seconds": summary["steady_state"]["step_seconds_median"],
-                "tokens_per_second": summary["steady_state"]["tokens_per_second"],
+                "step_seconds": steady_state["step_seconds_median"],
+                "tokens_per_second": steady_state["tokens_per_second"],
             }
 
         pair["megalodon_minus_llama"] = {
